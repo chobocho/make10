@@ -82,3 +82,11 @@
 - 브라우저 자동재생 정책 대응: 컨텍스트 지연 생성 + suspended 시 `resume`.
 - 의존성 주입 `ctxCtor`로 Node 테스트에서 fake AudioContext 사용.
 - `tests/audioManager.test.ts` 7건 추가, 전체 pass (누적 91/91).
+
+## 2026-04-24 — 이슈 #11 SaveManager 구현
+
+- `src/storage/SaveManager.ts` — IndexedDB 기반 진행 상황 CRUD.
+- `ProgressStore` 인터페이스 + `MemoryProgressStore`(테스트용) + `IndexedDbProgressStore`(실제) 분리.
+- 모든 실패(미지원, 블록, 트랜잭션 오류)를 삼키고 `false`/`null`/`[]` 반환 → 게임 계속 진행.
+- `createDefaultSaveManager()` 팩토리: `globalThis.indexedDB` 유무 자동 감지.
+- `tests/saveManager.test.ts` 7건 추가(메모리 스토어 + 예외 스토어), 전체 pass (누적 98/98).

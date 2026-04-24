@@ -23,7 +23,7 @@
 - [x] #08 BoardRenderer 구현 — 셀 이모지 렌더링, 선택/하이라이트 상태
 - [x] #09 PointerInput 구현 — 마우스+터치 통합 드래그 이벤트
 - [x] #10 AudioManager 구현 — Web Audio API, 삭제 효과음 base64 내장
-- [ ] #11 SaveManager 구현 — IndexedDB CRUD, 오류 시 폴백
+- [x] #11 SaveManager 구현 — IndexedDB CRUD, 오류 시 폴백
 - [ ] #12 맵 JSON 데이터 생성 — map001~map010 (우선 10개)
 - [ ] #13 GameScene 통합 — Board + Renderer + Input + Timer + Hint 연결
 - [ ] #14 TitleScene / ResultScene 구현
@@ -46,3 +46,4 @@
 - [x] #08 BoardRenderer 구현 (2026-04-24)
 - [x] #09 PointerInput 구현 (2026-04-24)
 - [x] #10 AudioManager 구현 (2026-04-24)
+- [x] #11 SaveManager 구현 (2026-04-24)
