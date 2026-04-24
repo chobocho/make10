@@ -1,0 +1,26 @@
+{
+  "name": "make10",
+  "version": "0.1.0",
+  "description": "숫자 합산 퍼즐 웹앱 (Bejeweled 스타일). 드래그로 합이 10인 셀을 삭제.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsc --watch",
+    "build": "esbuild src/main.ts --bundle --outfile=dist/dist.js --target=es2020 --format=iife",
+    "typecheck": "tsc --noEmit",
+    "test": "ts-node tests/runner.ts",
+    "serve": "python -m http.server 8001"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/seunghwacho/make10.git"
+  },
+  "author": "seunghwacho",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "esbuild": "^0.20.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}
