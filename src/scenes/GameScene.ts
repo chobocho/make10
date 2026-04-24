@@ -8,7 +8,7 @@ import type { MapData } from "../data/MapLoader";
 import { Board } from "../game/Board";
 import { Selector } from "../game/Selector";
 import { Timer } from "../game/Timer";
-import { Hint } from "../game/Hint";
+import { Hint, findValidCombination } from "../game/Hint";
 import {
   BoardRenderer,
   computeBoardLayout,
@@ -25,12 +25,15 @@ export interface GameSceneArgs {
   readonly map: MapData;
 }
 
+export type GameEndReason = "cleared" | "timeup" | "stuck";
+
 export interface GameResult {
   readonly mapId: number;
   readonly mapName: string;
   readonly cleared: boolean;
   readonly score: number;
   readonly timeLeft: number;
+  readonly reason: GameEndReason;
 }
 
 const SCORE_PAIR = 100;
@@ -78,7 +81,7 @@ export class GameScene implements Scene {
     this.score = 0;
     this.ended = false;
     this.pressedHintBtn = false;
-    this.timer.onExpired(() => this.endGame(false));
+    this.timer.onExpired(() => this.endGame("timeup"));
     this.timer.start();
     this.recomputeLayout();
     this.context.renderer.onResize(() => this.recomputeLayout());
@@ -170,10 +173,14 @@ export class GameScene implements Scene {
     const result = this.selector.commit();
     if (result.valid) {
       this.board.clearCells(result.positions);
+      this.board.applyGravity();
+      this.hint?.clear();
       this.score += result.positions.length === 2 ? SCORE_PAIR : SCORE_TRIPLE;
       this.context.audio.play("remove");
       if (this.board.isCleared()) {
-        this.endGame(true);
+        this.endGame("cleared");
+      } else if (findValidCombination(this.board) === null) {
+        this.endGame("stuck");
       }
     } else if (result.positions.length >= 2) {
       this.context.audio.play("invalid");
@@ -192,11 +199,12 @@ export class GameScene implements Scene {
     else this.context.audio.play("invalid");
   }
 
-  private endGame(cleared: boolean): void {
+  private endGame(reason: GameEndReason): void {
     if (this.ended || !this.timer || !this.map) return;
     this.ended = true;
     this.timer.pause();
     let finalScore = this.score;
+    const cleared = reason === "cleared";
     if (cleared) {
       finalScore += this.timer.getRemainingSeconds() * CLEAR_BONUS_PER_SECOND;
       this.context.audio.play("clear");
@@ -210,6 +218,7 @@ export class GameScene implements Scene {
       cleared,
       score: finalScore,
       timeLeft: this.timer.getRemainingSeconds(),
+      reason,
     };
     this.context.transition("result", result);
   }

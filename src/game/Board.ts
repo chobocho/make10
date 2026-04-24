@@ -80,6 +80,34 @@ export class Board {
     for (const [c, r] of positions) this.clearCell(c, r);
   }
 
+  /**
+   * 중력 적용 — 각 열에서 위에 있던 비어있지 않은 셀이 아래의 빈 칸을 채우며 낙하한다.
+   * (Bejeweled 스타일: 셀이 위에서 아래로 떨어진다.)
+   * 상대적 순서는 유지된다. 외부 상태(선택/힌트)는 호출자가 재설정해야 한다.
+   * @returns 실제로 이동이 발생했는지 여부
+   */
+  applyGravity(): boolean {
+    let moved = false;
+    for (let c = 0; c < this.cols; c++) {
+      const column: number[] = [];
+      for (let r = 0; r < this.rows; r++) {
+        const v = this.grid[r][c];
+        if (v !== 0) column.push(v);
+      }
+      const emptyCount = this.rows - column.length;
+      for (let r = 0; r < emptyCount; r++) {
+        if (this.grid[r][c] !== 0) moved = true;
+        this.grid[r][c] = 0;
+      }
+      for (let i = 0; i < column.length; i++) {
+        const newRow = emptyCount + i;
+        if (this.grid[newRow][c] !== column[i]) moved = true;
+        this.grid[newRow][c] = column[i];
+      }
+    }
+    return moved;
+  }
+
   isCleared(): boolean {
     for (let r = 0; r < this.rows; r++) {
       for (let c = 0; c < this.cols; c++) {

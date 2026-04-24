@@ -144,6 +144,56 @@ describe("Board", () => {
     assertEqual(b.remainingCount(), 3);
   });
 
+  test("applyGravity: 각 열의 빈 칸이 위로, 값은 아래로 이동", () => {
+    const b = new Board([
+      [1, 2, 0],
+      [0, 3, 4],
+      [5, 0, 6],
+    ]);
+    const moved = b.applyGravity();
+    assertTrue(moved);
+    assertDeepEqual(b.snapshot(), [
+      [0, 0, 0],
+      [1, 2, 4],
+      [5, 3, 6],
+    ]);
+  });
+
+  test("applyGravity: 이미 바닥 정렬이면 moved=false, 값 변화 없음", () => {
+    const b = new Board([
+      [0, 0],
+      [1, 2],
+      [3, 4],
+    ]);
+    const moved = b.applyGravity();
+    assertFalse(moved);
+    assertDeepEqual(b.snapshot(), [
+      [0, 0],
+      [1, 2],
+      [3, 4],
+    ]);
+  });
+
+  test("applyGravity: 전체 빈 열/전체 꽉찬 열 혼합", () => {
+    const b = new Board([
+      [1, 0],
+      [2, 0],
+      [3, 0],
+    ]);
+    b.applyGravity();
+    assertDeepEqual(b.snapshot(), [
+      [1, 0],
+      [2, 0],
+      [3, 0],
+    ]);
+  });
+
+  test("applyGravity: 단일 열 중간 빈 칸", () => {
+    const b = new Board([[1], [0], [3]]);
+    b.applyGravity();
+    assertDeepEqual(b.snapshot(), [[0], [1], [3]]);
+  });
+
   test("nonEmptyCells 순회", () => {
     const b = new Board([
       [1, 0],

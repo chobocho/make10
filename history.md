@@ -160,3 +160,20 @@
 - `SaveManager.saveBest(record)` 추가 — 기존 점수보다 높을 때만 덮어씀(동점/미만은 유지). `ResultScene`에서 클리어 저장은 `saveBest`로 교체.
 - `TitleScene` — 진입 시 `saveManager.list()` 로드해 `bestScores: Map<mapId, score>` 구성. 클리어된 버튼은 녹색 톤 + `★ NNN` 배지로 렌더링. 타이틀 재진입(결과→타이틀) 시 재로드되어 직전 플레이 결과 즉시 반영.
 - 테스트 추가: `saveBest`(높음/낮음/동점 4건) + ResultScene이 `saveBest` 사용 검증 + `cleared=false` 시 저장 안 함 + TitleScene 진입 로딩/재진입 재로딩 (누적 143/143 pass).
+
+## 2026-04-24 — 규칙 변경: 중력 적용 + 랜덤 맵
+
+**변경**: 셀 제거 후 Bejeweled 스타일 **중력** 적용. 맵은 자명하게 클리어 가능할 필요가 없으며, 유효 조합이 소진되면 종료.
+
+- `CLAUDE.md` §2-3 / §2-6 업데이트 — 중력 규칙 명시, 종료 조건 3종(cleared/timeup/stuck).
+- `Board.applyGravity()` 추가 — 각 열에서 비어있지 않은 셀을 아래로 모음(상대 순서 유지). 이동 발생 여부 반환.
+- `GameScene.onPointerUp` — 유효 제거 직후 `applyGravity` + `hint.clear()` + `findValidCombination` 체크. 전체 클리어면 `cleared`, 유효 조합 없으면 `stuck` 로 종료.
+- `GameResult`에 `reason: 'cleared' | 'timeup' | 'stuck'` 필드 추가. `ResultScene` 헤드라인이 stuck 시 `🏁 진행 불가` 로 표시.
+- `tools/gen-maps.ts` — 수평 합-10 쌍 타일링 제거. 1~9 랜덤 생성 후 초기 유효 조합 존재할 때까지 재시도(최대 200회). cols 짝수 제약 해제.
+- `data/map001.json` ~ `map100.json` 모두 재생성 (`mulberry32` 시드 재사용으로 동일 id는 결정적).
+- `tests/board.test.ts` — 중력 4건 추가.
+- `tests/gameScene.test.ts` — 중력 동작 + stuck reason 2건 추가.
+- `tests/integration.test.ts` — 디스크 맵 대신 in-memory 픽스처 사용. stuck 종료 플로우 추가.
+- `tests/mapLoader.test.ts` — "수평 쌍 합=10" 주장 제거, "모든 셀 1~9" 로 완화.
+- `README.md` — 중력/종료 조건/맵 생성 설명 업데이트.
+- 최종: `npx tsc --noEmit` 에러 0, 테스트 **150/150 pass**, 번들 재생성.

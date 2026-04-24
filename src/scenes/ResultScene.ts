@@ -86,7 +86,12 @@ export class ResultScene implements Scene {
     ctx.textBaseline = "middle";
     ctx.font = `bold ${this.headlineFontPx}px -apple-system, sans-serif`;
     ctx.fillStyle = res?.cleared ? COLOR_HEAD_WIN : COLOR_HEAD_LOSE;
-    const headline = res?.cleared ? "🎉 클리어!" : "⏱ 시간 초과";
+    const headline =
+      res?.cleared
+        ? "🎉 클리어!"
+        : res?.reason === "stuck"
+          ? "🏁 진행 불가"
+          : "⏱ 시간 초과";
     ctx.fillText(headline, width / 2, height * 0.22);
 
     ctx.fillStyle = COLOR_TEXT;

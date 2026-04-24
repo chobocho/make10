@@ -3,11 +3,14 @@
  *
  * 실행:  npx ts-node tools/gen-maps.ts [fromId=1] [toId=10]
  *
- * 합이 10인 수평 쌍을 타일링한 보드를 생성한다. 모든 보드는 자명하게 solvable(2셀 쌍으로 완전히 클리어 가능).
- * 난이도는 맵 크기 + timeLimit + hintCount로 조절한다.
+ * 1~9 사이 임의 숫자로 보드를 채운 뒤, 초기 유효 조합(합=10)이 최소 1개 이상
+ * 존재하는지 검증해 없으면 재시도한다. 중력 적용(Bejeweled 스타일) 하에서
+ * 자명하게 전체 클리어가 가능할 필요는 없다.
  */
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { Board } from "../src/game/Board";
+import { findValidCombination } from "../src/game/Hint";
 
 interface MapSpec {
   id: number;
@@ -30,31 +33,35 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-const PAIRS: ReadonlyArray<readonly [number, number]> = [
-  [1, 9],
-  [2, 8],
-  [3, 7],
-  [4, 6],
-  [5, 5],
-  [9, 1],
-  [8, 2],
-  [7, 3],
-  [6, 4],
-];
-
-function genPairBoard(cols: number, rows: number, rand: () => number): number[][] {
-  if (cols % 2 !== 0) {
-    throw new Error(`cols는 짝수여야 합니다 (받음: ${cols}).`);
-  }
+function genRandomBoard(cols: number, rows: number, rand: () => number): number[][] {
   const board: number[][] = [];
   for (let r = 0; r < rows; r++) {
     const row: number[] = [];
-    for (let c = 0; c < cols; c += 2) {
-      const p = PAIRS[Math.floor(rand() * PAIRS.length)];
-      row.push(p[0], p[1]);
+    for (let c = 0; c < cols; c++) {
+      row.push(1 + Math.floor(rand() * 9));
     }
     board.push(row);
   }
+  return board;
+}
+
+/**
+ * 초기 유효 조합(합=10)이 1개 이상 존재할 때까지 최대 N회 재시도.
+ * 실패 시 보드의 0행 앞 두 칸을 강제로 (3,7)로 세팅해 강제 만족.
+ */
+function genBoardWithInitialCombo(
+  cols: number,
+  rows: number,
+  rand: () => number,
+  maxAttempts = 200,
+): number[][] {
+  for (let i = 0; i < maxAttempts; i++) {
+    const board = genRandomBoard(cols, rows, rand);
+    if (findValidCombination(new Board(board))) return board;
+  }
+  const board = genRandomBoard(cols, rows, rand);
+  board[0][0] = 3;
+  board[0][1] = 7;
   return board;
 }
 
@@ -111,14 +118,13 @@ function presetFor(id: number): Preset {
     timeLimit = 60 - Math.floor((id - 60) / 10);
     hintCount = 1;
   }
-  if (cols % 2 !== 0) cols += 1;
   return { id, name, cols, rows, timeLimit, hintCount };
 }
 
 export function generateMap(id: number): MapSpec {
   const preset = presetFor(id);
   const rand = mulberry32(preset.id * 2654435761);
-  const initialBoard = genPairBoard(preset.cols, preset.rows, rand);
+  const initialBoard = genBoardWithInitialCombo(preset.cols, preset.rows, rand);
   return {
     id: preset.id,
     name: preset.name,

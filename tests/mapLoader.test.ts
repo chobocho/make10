@@ -149,4 +149,15 @@ describe("생성된 맵 JSON 실제 검증 (전체 100개)", () => {
     }
     assertTrue(avgTime(60, 100) < avgTime(1, 10));
   });
+
+  test("맵 셀 값은 1~9 범위 (빈 칸 0은 초기 보드에 없어야 함)", () => {
+    for (let id = 1; id <= MAP_COUNT; id++) {
+      const m = parseMapJson(readMap(id));
+      for (const row of m.initialBoard) {
+        for (const v of row) {
+          assertTrue(v >= 1 && v <= 9);
+        }
+      }
+    }
+  });
 });

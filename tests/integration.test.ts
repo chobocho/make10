@@ -2,8 +2,6 @@
  * Integration 테스트 — Title → Game → Result 전 사이클.
  * DOM/Canvas를 프록시 페이크로 대체하고 FSM + 세 씬 + 실제 맵 JSON을 함께 돌려 전환·상태·점수·저장을 검증한다.
  */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import {
   describe,
   test,
@@ -19,7 +17,7 @@ import { ResultScene } from "../src/scenes/ResultScene";
 import { CanvasRenderer } from "../src/renderer/CanvasRenderer";
 import { AudioManager, SoundName } from "../src/audio/AudioManager";
 import { SaveManager, MemoryProgressStore } from "../src/storage/SaveManager";
-import { parseMapJson, MapData } from "../src/data/MapLoader";
+import type { MapData } from "../src/data/MapLoader";
 import {
   computeMapGridLayout,
   computeResultButtonsLayout,
@@ -47,16 +45,58 @@ function fakeRenderer(w = 480, h = 800): CanvasRenderer {
   return r;
 }
 
-function readMapFromDisk(id: number): MapData {
-  return parseMapJson(
-    readFileSync(
-      join(__dirname, "..", "data", `map${String(id).padStart(3, "0")}.json`),
-      "utf-8",
-    ),
-  );
+/**
+ * 통합 테스트용 픽스처 — 중력이 작동해도 결정적으로 클리어 가능한 보드.
+ * 모든 행이 (x, 10-x) 쌍으로 구성되어, 위에서 아래로 순차 제거 시 전체 클리어.
+ */
+function pairTiledFixture(id = 1, rows = 3, cols = 2): MapData {
+  const initialBoard: number[][] = [];
+  const pairs = [
+    [3, 7],
+    [4, 6],
+    [2, 8],
+    [1, 9],
+    [5, 5],
+  ];
+  for (let r = 0; r < rows; r++) {
+    const row: number[] = [];
+    for (let c = 0; c < cols; c += 2) {
+      const p = pairs[(r + c) % pairs.length];
+      row.push(p[0], p[1]);
+    }
+    initialBoard.push(row);
+  }
+  return {
+    id,
+    name: `fixture${id}`,
+    cols,
+    rows,
+    timeLimit: 30,
+    hintCount: 1,
+    targetScore: 0,
+    initialBoard,
+  };
 }
 
-function buildContext() {
+/** 타임아웃 유도용 — 유효 조합이 존재하지만 빨리 클리어되지 않는 작은 보드 */
+function slowFixture(id = 2): MapData {
+  return {
+    id,
+    name: `slow${id}`,
+    cols: 2,
+    rows: 3,
+    timeLimit: 5,
+    hintCount: 0,
+    targetScore: 0,
+    initialBoard: [
+      [3, 7],
+      [4, 6],
+      [2, 8],
+    ],
+  };
+}
+
+function buildContext(mapProvider: (id: number) => MapData = (id) => pairTiledFixture(id)) {
   const renderer = fakeRenderer();
   const audioCalls: SoundName[] = [];
   const audio = new AudioManager({ ctxCtor: null });
@@ -73,7 +113,7 @@ function buildContext() {
     transition: (next, args) => {
       void fsm.transition(next, args);
     },
-    loadMap: async (id) => readMapFromDisk(id),
+    loadMap: async (id) => mapProvider(id),
     maxMapId: 100,
   };
   return { ctx, fsm, renderer, audioCalls, saveManager };
@@ -90,22 +130,34 @@ function cellCenter(
   };
 }
 
-/** GameScene 안에서 보드를 모두 비우는 드래그 시퀀스를 실행. map이 가로 2셀 쌍 타일링이므로 모든 쌍을 순차 제거. */
-async function clearAllPairs(
-  scene: GameScene,
-  map: MapData,
-): Promise<void> {
-  // GameScene은 첫 render 이후 레이아웃이 계산된다.
+/**
+ * GameScene 안에서 보드를 모두 비우는 드래그 시퀀스를 실행.
+ * 픽스처는 행별 가로 쌍 합=10 구성이며, 중력이 작동해도 **위에서 아래로** 제거하면
+ * 빈 행이 자연스럽게 하단에 쌓여 결국 모든 셀이 제거된다.
+ * 각 행 제거 후에는 중력으로 위쪽 값들이 내려오므로 매 반복마다 행 0 을 기준으로 제거한다.
+ */
+async function clearAllPairs(scene: GameScene, map: MapData): Promise<void> {
   scene.render();
-  const layout = (scene as unknown as { boardRenderer: { getLayout(): typeof import("../src/renderer/BoardRenderer").BoardLayout extends infer T ? T : never } }).boardRenderer.getLayout() as unknown as {
-    originX: number;
-    originY: number;
-    cellSize: number;
-  };
-  for (let r = 0; r < map.rows; r++) {
+  const layout = (scene as unknown as {
+    boardRenderer: { getLayout(): { originX: number; originY: number; cellSize: number } };
+  }).boardRenderer.getLayout();
+  // 각 반복: 가장 위에 남아있는 (비어있지 않은) 행을 제거.
+  // 픽스처 구조상 모든 유효 행은 가로 쌍 합=10이므로 rows 만큼 반복.
+  for (let iter = 0; iter < map.rows; iter++) {
+    // 가장 아래쪽 비어있지 않은 행을 찾는다 (중력 후 값들은 아래쪽에 모임).
+    const board = (scene as unknown as { board: { snapshot(): number[][] } }).board;
+    const snap = board.snapshot();
+    let targetRow = -1;
+    for (let r = snap.length - 1; r >= 0; r--) {
+      if (snap[r].some((v) => v !== 0)) {
+        targetRow = r;
+        break;
+      }
+    }
+    if (targetRow < 0) break;
     for (let c = 0; c < map.cols; c += 2) {
-      const a = cellCenter(layout, c, r);
-      const b = cellCenter(layout, c + 1, r);
+      const a = cellCenter(layout, c, targetRow);
+      const b = cellCenter(layout, c + 1, targetRow);
       scene.onPointerDown!(a.x, a.y);
       scene.onPointerMove!(b.x, b.y);
       scene.onPointerUp!(b.x, b.y);
@@ -114,7 +166,7 @@ async function clearAllPairs(
 }
 
 describe("Integration: Title → Game → Result", () => {
-  test("맵1 선택 → 클리어 → result에 전환 → retry 반복", async () => {
+  test("맵1 선택 → 클리어 → result 전환 → retry 반복", async () => {
     const { ctx, fsm, audioCalls, saveManager } = buildContext();
     fsm.register("title", new TitleScene(ctx));
     fsm.register("game", new GameScene(ctx));
@@ -136,29 +188,24 @@ describe("Integration: Title → Game → Result", () => {
       firstBtn.x + firstBtn.width / 2,
       firstBtn.y + firstBtn.height / 2,
     );
-    // 비동기 loadMap 대기
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
     assertEqual(fsm.getCurrentId(), "game");
 
-    // 게임 씬의 현재 map 정보 얻기
     const gameScene = fsm.getCurrent() as GameScene;
-    const map = readMapFromDisk(1);
+    const map = pairTiledFixture(1);
     await clearAllPairs(gameScene, map);
 
-    // 전환은 fire-and-forget transition 내부에서 일어나므로 flush
     await Promise.resolve();
     await Promise.resolve();
     assertEqual(fsm.getCurrentId(), "result");
     assertTrue(audioCalls.includes("clear"));
 
-    // 저장 확인
     await Promise.resolve();
     const savedList = await saveManager.list();
     assertTrue(savedList.some((r) => r.mapId === 1));
 
-    // Result 의 retry 탭
     const btns = computeResultButtonsLayout(size.width, size.height);
     fsm.onPointerDown(btns.retry.x + 1, btns.retry.y + 1);
     fsm.onPointerUp(btns.retry.x + 1, btns.retry.y + 1);
@@ -166,20 +213,18 @@ describe("Integration: Title → Game → Result", () => {
     await Promise.resolve();
     assertEqual(fsm.getCurrentId(), "game");
 
-    // 한 번 더 클리어
     await clearAllPairs(fsm.getCurrent() as GameScene, map);
     await Promise.resolve();
     await Promise.resolve();
     assertEqual(fsm.getCurrentId(), "result");
   });
 
-  test("타이머 만료 → gameover 결과에서 next 가능 (mapId<100)", async () => {
-    const { ctx, fsm } = buildContext();
+  test("타이머 만료 → reason=timeup 결과에서 next 가능", async () => {
+    const { ctx, fsm } = buildContext((id) => slowFixture(id));
     fsm.register("title", new TitleScene(ctx));
     fsm.register("game", new GameScene(ctx));
     fsm.register("result", new ResultScene(ctx));
-    await fsm.start("game", { map: readMapFromDisk(2) });
-    // dt를 큰 값으로 tick → 타이머 만료
+    await fsm.start("game", { map: slowFixture(2) });
     fsm.update(300_000);
     await Promise.resolve();
     await Promise.resolve();
@@ -187,6 +232,7 @@ describe("Integration: Title → Game → Result", () => {
     const result = (fsm.getCurrent() as unknown as { result: GameResult | null }).result;
     assertTrue(result !== null);
     assertFalse(result!.cleared);
+    assertEqual(result!.reason, "timeup");
 
     const size = ctx.renderer.getSize();
     const btns = computeResultButtonsLayout(size.width, size.height);
@@ -197,15 +243,41 @@ describe("Integration: Title → Game → Result", () => {
     assertEqual(fsm.getCurrentId(), "game");
   });
 
-  test("최고 난이도(100) 맵도 기본적으로 solvable — 이론적 검증", () => {
-    const map = readMapFromDisk(100);
-    assertTrue(map.initialBoard.length === map.rows);
-    assertTrue(map.cols % 2 === 0);
-    // 모든 쌍이 수평으로 합 10 → 명시적으로 검증
-    for (let r = 0; r < map.rows; r++) {
-      for (let c = 0; c < map.cols; c += 2) {
-        assertEqual(map.initialBoard[r][c] + map.initialBoard[r][c + 1], 10);
-      }
-    }
+  test("유효 조합 소진 → reason=stuck 로 종료", async () => {
+    const stuckMap: MapData = {
+      id: 1,
+      name: "stuck-test",
+      cols: 2,
+      rows: 2,
+      timeLimit: 60,
+      hintCount: 0,
+      targetScore: 0,
+      // 초기에 (3,7) 가로 쌍 1개뿐, 제거 후 남는 (1,1)은 합=2라 유효 조합 없음
+      initialBoard: [
+        [3, 7],
+        [1, 1],
+      ],
+    };
+    const { ctx, fsm } = buildContext(() => stuckMap);
+    fsm.register("game", new GameScene(ctx));
+    fsm.register("result", new ResultScene(ctx));
+    await fsm.start("game", { map: stuckMap });
+    const scene = fsm.getCurrent() as GameScene;
+    scene.render();
+    const layout = (scene as unknown as {
+      boardRenderer: { getLayout(): { originX: number; originY: number; cellSize: number } };
+    }).boardRenderer.getLayout();
+    // (3,7) 쌍 선택·제거
+    const a = cellCenter(layout, 0, 0);
+    const b = cellCenter(layout, 1, 0);
+    scene.onPointerDown!(a.x, a.y);
+    scene.onPointerMove!(b.x, b.y);
+    scene.onPointerUp!(b.x, b.y);
+    await Promise.resolve();
+    await Promise.resolve();
+    assertEqual(fsm.getCurrentId(), "result");
+    const result = (fsm.getCurrent() as unknown as { result: GameResult | null }).result;
+    assertEqual(result?.reason, "stuck");
+    assertFalse(result?.cleared ?? true);
   });
 });

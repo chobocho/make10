@@ -161,6 +161,77 @@ describe("GameScene", () => {
     assertFalse(audioCalls.includes("hint"));
   });
 
+  test("쌍 제거 후 중력: 위 행의 셀들이 아래로 내려옴", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    const scene = new GameScene(context);
+    const map: MapData = {
+      id: 1,
+      name: "gravity-test",
+      cols: 2,
+      rows: 3,
+      timeLimit: 60,
+      hintCount: 0,
+      targetScore: 0,
+      initialBoard: [
+        [1, 9],
+        [2, 8],
+        [3, 7],
+      ],
+    };
+    await scene.enter({ map });
+    scene.render();
+    // 맨 위 행 (1,9) 제거
+    const layout = (scene as unknown as { boardRenderer: { getLayout(): any } }).boardRenderer.getLayout();
+    const a = { x: layout.originX + layout.cellSize / 2, y: layout.originY + layout.cellSize / 2 };
+    const b = { x: layout.originX + layout.cellSize + layout.cellSize / 2, y: layout.originY + layout.cellSize / 2 };
+    scene.onPointerDown!(a.x, a.y);
+    scene.onPointerMove!(b.x, b.y);
+    scene.onPointerUp!(b.x, b.y);
+    // 중력 적용 후 맨 위 행은 비어있고 원래 row1, row2 가 아래로 내려와야 함
+    const board = (scene as unknown as { board: { snapshot(): number[][] } }).board;
+    const snap = board.snapshot();
+    assertEqual(snap[0][0], 0);
+    assertEqual(snap[0][1], 0);
+    assertEqual(snap[1][0], 2);
+    assertEqual(snap[1][1], 8);
+    assertEqual(snap[2][0], 3);
+    assertEqual(snap[2][1], 7);
+  });
+
+  test("유효 조합 소진 시 stuck reason으로 종료", async () => {
+    const r = makeFakeRenderer();
+    const { context, transitions } = makeCtx(r);
+    const scene = new GameScene(context);
+    // (3,7) 쌍 제거 후 남는 (1,1)은 합=2라 조합 없음
+    await scene.enter({
+      map: {
+        id: 1,
+        name: "stuck",
+        cols: 2,
+        rows: 2,
+        timeLimit: 60,
+        hintCount: 0,
+        targetScore: 0,
+        initialBoard: [
+          [3, 7],
+          [1, 1],
+        ],
+      },
+    });
+    scene.render();
+    const layout = (scene as unknown as { boardRenderer: { getLayout(): any } }).boardRenderer.getLayout();
+    const a = { x: layout.originX + layout.cellSize / 2, y: layout.originY + layout.cellSize / 2 };
+    const b = { x: layout.originX + layout.cellSize + layout.cellSize / 2, y: layout.originY + layout.cellSize / 2 };
+    scene.onPointerDown!(a.x, a.y);
+    scene.onPointerMove!(b.x, b.y);
+    scene.onPointerUp!(b.x, b.y);
+    assertTrue(scene._isEnded());
+    const res = transitions[transitions.length - 1].args as GameResult;
+    assertEqual(res.reason, "stuck");
+    assertFalse(res.cleared);
+  });
+
   test("무효 선택 시 invalid 사운드", async () => {
     const r = makeFakeRenderer();
     const { context, audioCalls } = makeCtx(r);
