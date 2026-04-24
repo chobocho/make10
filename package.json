@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "description": "숫자 합산 퍼즐 웹앱 (Bejeweled 스타일). 드래그로 합이 10인 셀을 삭제.",
   "private": true,
-  "type": "module",
   "scripts": {
     "dev": "tsc --watch",
     "build": "esbuild src/main.ts --bundle --outfile=dist/dist.js --target=es2020 --format=iife",

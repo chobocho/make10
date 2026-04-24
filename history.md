@@ -12,3 +12,10 @@
 - `.gitignore` 생성 — `node_modules/`, `dist/`, `release/` 등 제외.
 - `src/main.ts` 스텁 작성 — DOMContentLoaded 후 Canvas 초기화, 추후 이슈에서 `GameApp` 연결 예정.
 - 디렉토리 스켈레톤 생성: `src/{core,scenes,game,renderer,input,audio,data,storage}/`, `data/`, `tests/`, `dist/` — 빈 폴더는 `.gitkeep`으로 유지.
+
+## 2026-04-24 — 이슈 #02 경량 테스트 러너 구현
+
+- `tests/runner.ts` 작성 — `describe`/`test`/`assertEqual`/`assertNotEqual`/`assertTrue`/`assertFalse`/`assertDeepEqual`/`assertThrows`/`assertCloseTo` 제공. `readdirSync`로 동일 디렉토리의 `*.test.ts` 자동 등록.
+- `tests/runner.test.ts` — 러너 어설션 셀프 체크 7건 추가, 전체 pass.
+- `tsconfig.json`에 `ts-node` 블록 추가 — 테스트 실행 시 `module: CommonJS`, `transpileOnly: true`로 오버라이드. `package.json`에서 `"type": "module"` 제거하여 CJS ts-node 호환성 확보.
+- 실행: `npx ts-node tests/runner.ts` → 7/7 pass.
