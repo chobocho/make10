@@ -27,3 +27,11 @@
 - 좌표 규약: `(col, row)` — x 먼저, y 나중.
 - 검증: 잘못된 값(0~9 정수 외)·행 길이 불일치·빈 보드 생성자에서 즉시 에러.
 - `tests/board.test.ts` 15건 추가, 전체 pass.
+
+## 2026-04-24 — 이슈 #04 Selector 모듈 구현
+
+- `src/game/Selector.ts` — 드래그 선택 상태 관리. 4방향 인접 강제, 2~3개 길이 제한, 합 10 판정.
+- 직전-직전 셀로 돌아가면 마지막을 pop하는 자연스러운 undo 동작.
+- 상수 `MIN_SELECTION=2`, `MAX_SELECTION=3`, `TARGET_SUM=10` export.
+- `commit()`에서 결과(positions/sum/valid) 반환 후 상태 초기화.
+- `tests/selector.test.ts` 18건 추가, 전체 pass (누적 40/40).
