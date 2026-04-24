@@ -57,3 +57,11 @@
 - 구조 분리: 콜백(`onResize`) · 접근자(`getCtx`,`getCanvas`,`getSize`) · `clear([color])`.
 - 테스트는 fake canvas/ctx 모킹으로 DOM 없이 검증.
 - `tests/canvasRenderer.test.ts` 7건 추가, 전체 pass (누적 71/71).
+
+## 2026-04-24 — 이슈 #08 BoardRenderer 구현
+
+- `src/renderer/BoardRenderer.ts` — 이모지 기반 셀 렌더링 + 선택/힌트 하이라이트.
+- 레이아웃 유틸: `computeBoardLayout(bounds, cols, rows, padding)` — 셀 크기 자동 계산 & 중앙 정렬.
+- 변환 유틸: `cellRect`, `hitTestCell` — 스크린 ↔ 셀 좌표.
+- 키캡 이모지(1️⃣~9️⃣) 사용, 선택 셀 간 경로 라인 표시. 유효/무효 선택을 색상으로 구분.
+- `tests/boardRenderer.test.ts` 8건 추가, 전체 pass (누적 79/79).
