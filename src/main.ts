@@ -4,7 +4,7 @@
  */
 import { GameApp } from "./core/GameApp";
 
-const MAX_MAP_ID = 10;
+const MAX_MAP_ID = 100;
 
 async function bootstrap(): Promise<void> {
   const canvas = document.getElementById("gameCanvas") as HTMLCanvasElement | null;

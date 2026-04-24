@@ -104,20 +104,20 @@ describe("MapLoader — validation", () => {
   });
 });
 
-describe("생성된 맵 JSON 실제 검증", () => {
-  for (let id = 1; id <= 10; id++) {
-    test(`map${String(id).padStart(3, "0")}.json — 스키마 유효 & 유효 조합 존재`, () => {
+const MAP_COUNT = 100;
+
+describe("생성된 맵 JSON 실제 검증 (전체 100개)", () => {
+  test("100개 맵 모두 스키마 유효 & 유효 조합 존재", () => {
+    for (let id = 1; id <= MAP_COUNT; id++) {
       const m = parseMapJson(readMap(id));
       assertEqual(m.id, id);
       assertEqual(m.initialBoard.length, m.rows);
       for (const row of m.initialBoard) assertEqual(row.length, m.cols);
-      // Board 생성 가능해야 함
       const board = new Board(m.initialBoard);
-      // 유효 조합이 적어도 1개 이상 존재해야 함 (solvable 시작 조건)
       const combo = findValidCombination(board);
       assertTrue(combo !== null, `map${id}: 유효 조합 없음`);
-    });
-  }
+    }
+  });
 
   test("map001 합이 10인 쌍을 포함", () => {
     const m = parseMapJson(readMap(1));
@@ -128,19 +128,25 @@ describe("생성된 맵 JSON 실제 검증", () => {
     assertEqual(sum, 10);
   });
 
-  test("맵별 제한 시간/힌트 수는 양의 정수", () => {
-    for (let id = 1; id <= 10; id++) {
+  test("모든 맵의 timeLimit > 0, hintCount ≥ 0, id 1..100", () => {
+    const ids: number[] = [];
+    for (let id = 1; id <= MAP_COUNT; id++) {
       const m = parseMapJson(readMap(id));
       assertTrue(m.timeLimit > 0);
       assertTrue(m.hintCount >= 0);
+      ids.push(m.id);
     }
+    assertDeepEqual(ids, Array.from({ length: MAP_COUNT }, (_, i) => i + 1));
   });
 
-  test("id 순서대로 저장됨", () => {
-    const ids: number[] = [];
-    for (let id = 1; id <= 10; id++) {
-      ids.push(parseMapJson(readMap(id)).id);
+  test("난이도 경향: 후반(id>=60)은 평균 시간 제한이 초반(id<=10)보다 짧음", () => {
+    function avgTime(from: number, to: number): number {
+      let total = 0;
+      for (let id = from; id <= to; id++) {
+        total += parseMapJson(readMap(id)).timeLimit;
+      }
+      return total / (to - from + 1);
     }
-    assertDeepEqual(ids, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    assertTrue(avgTime(60, 100) < avgTime(1, 10));
   });
 });

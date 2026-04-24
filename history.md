@@ -131,3 +131,11 @@
 - `build.sh` — `esbuild --minify` 로 번들링 후 `release/` 초기화·재생성. `sed`로 `index.html`의 `dist/dist.js` → `dist.js` 치환하여 평탄화(§3-2 준수).
 - `build.bat` — Windows용. CP949/UTF-8 인코딩 이슈 회피를 위해 메시지는 영문 ASCII 유지. 경로 치환은 PowerShell 사용.
 - 실행 테스트: `./build.sh` → `release/` 에 `index.html`(dist.js 참조), `dist.js`(27kb 압축), `data/map001~010.json` 정상 생성.
+
+## 2026-04-24 — 이슈 #17 맵 map011~map100 생성
+
+- `npx ts-node tools/gen-maps.ts 11 100` 실행 — 90개 맵 추가. 같은 mulberry32 시드 정책이라 재생성해도 결정적.
+- 난이도 프리셋: id ≤10 초급, 11~30 중급(70s/hint 2), 31~60 상급(~65s/hint 1), 61~100 전문가(~60s→56s/hint 1).
+- `src/main.ts`의 `MAX_MAP_ID` 를 10 → 100으로 상향.
+- `tests/mapLoader.test.ts` 전면 업데이트: 100개 맵 전부 스키마·유효 조합 존재·id 연속성·난이도 경향(후반 평균 시간 < 초반)을 검증. 누적 132/132 pass.
+- `./build.sh` 재실행하여 `release/data/` 에 100개 JSON 포함.
