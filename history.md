@@ -116,3 +116,12 @@
 - `src/scenes/TitleScene.ts` — 타이틀 + 맵 선택 그리드 (뷰포트 폭별 3~5열). 클릭 시 `context.loadMap(id)` 비동기 로딩 → GameScene 전환.
 - `src/scenes/ResultScene.ts` — 클리어/실패 헤드라인, 점수·남은 시간 표시, `다시/다음/타이틀` 버튼. next는 `maxMapId` 초과 시 비활성. 클리어 시 `saveManager.save` fire-and-forget.
 - `tests/titleResultScene.test.ts` 9건 추가(레이아웃 2 + TitleScene 2 + ResultScene 5), 전체 pass (누적 136/136).
+
+## 2026-04-24 — 이슈 #15 FSM + GameApp + main.ts 배선
+
+- `src/core/FSM.ts` — Title/Game/Result 씬 전환 상태머신. `register` → `start/transition` → `update/render/onPointer*` 위임. 전환 중 중첩 호출은 직렬화.
+- `src/core/GameApp.ts` — Canvas 초기화, PointerInput 연결, FSM에 씬 등록, 60 FPS requestAnimationFrame 루프. dt 상한(100ms)으로 백그라운드 탭 복귀 시 폭주 방지.
+- `src/main.ts` 갱신 — DOMContentLoaded 시 `GameApp.start()`.
+- `index.html` — bundle 포맷(IIFE)에 맞춰 `<script type="module">` → `defer` 로드로 수정.
+- 첫 번들 빌드: `npx esbuild src/main.ts --bundle --outfile=dist/dist.js --target=es2020 --format=iife` → 48.9kb.
+- `tests/fsm.test.ts` 5건 추가, 전체 pass (누적 141/141).
