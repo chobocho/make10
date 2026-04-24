@@ -66,7 +66,7 @@ function tinyMap(id = 1): MapData {
   };
 }
 
-function makeCtx(): {
+function makeCtx(maxMapId = 10): {
   ctx: SceneContext;
   transitions: Array<{ next: SceneId; args: unknown }>;
   audioCalls: SoundName[];
@@ -89,7 +89,7 @@ function makeCtx(): {
       loadCalls.push(id);
       return tinyMap(id);
     },
-    maxMapId: 10,
+    maxMapId,
   };
   return { ctx, transitions, audioCalls, loadCalls };
 }
@@ -138,6 +138,68 @@ describe("TitleScene", () => {
     scene.onPointerDown!(-10, -10);
     scene.onPointerUp!(-10, -10);
     assertEqual(transitions.length, 0);
+  });
+
+  test("100개 맵: 콘텐츠 높이가 뷰포트 초과 → maxScrollY > 0", () => {
+    const { ctx } = makeCtx(100);
+    const scene = new TitleScene(ctx);
+    scene.enter();
+    scene.render();
+    assertTrue(scene._getMaxScrollY() > 0);
+  });
+
+  test("드래그로 스크롤: 임계값 넘기면 scrollY 증가 + 버튼 탭 취소", async () => {
+    const { ctx, transitions } = makeCtx(100);
+    const scene = new TitleScene(ctx);
+    scene.enter();
+    scene.render();
+    const grid = computeMapGridLayout(480, 800, ctx.maxMapId);
+    const first = grid.buttons[0];
+    const sx = first.x + first.width / 2;
+    const sy = first.y + first.height / 2;
+    scene.onPointerDown!(sx, sy);
+    scene.onPointerMove!(sx, sy - 50);
+    assertTrue(scene._getScrollY() > 0);
+    scene.onPointerUp!(sx, sy - 50);
+    await Promise.resolve();
+    assertEqual(transitions.length, 0);
+  });
+
+  test("드래그 없이 탭: 기존처럼 맵 로드", async () => {
+    const { ctx, loadCalls } = makeCtx(100);
+    const scene = new TitleScene(ctx);
+    scene.enter();
+    scene.render();
+    const grid = computeMapGridLayout(480, 800, ctx.maxMapId);
+    const first = grid.buttons[0];
+    const sx = first.x + first.width / 2;
+    const sy = first.y + first.height / 2;
+    scene.onPointerDown!(sx, sy);
+    scene.onPointerMove!(sx + 2, sy + 3);
+    scene.onPointerUp!(sx + 2, sy + 3);
+    await Promise.resolve();
+    await Promise.resolve();
+    assertEqual(loadCalls[0], 1);
+  });
+
+  test("스크롤 후 버튼 탭: 로지컬 좌표로 정확히 히트", async () => {
+    const { ctx, loadCalls } = makeCtx(100);
+    const scene = new TitleScene(ctx);
+    scene.enter();
+    scene.render();
+    scene._scrollBy(500);
+    const scrolled = scene._getScrollY();
+    assertTrue(scrolled > 0);
+    const grid = computeMapGridLayout(480, 800, ctx.maxMapId);
+    const cols = 4; // 480px 폭 → 4열
+    const targetIdx = cols * 3; // 네 번째 행의 첫 칸 (idx=12)
+    const target = grid.buttons[targetIdx];
+    const visibleY = target.y - scrolled;
+    scene.onPointerDown!(target.x + target.width / 2, visibleY + target.height / 2);
+    scene.onPointerUp!(target.x + target.width / 2, visibleY + target.height / 2);
+    await Promise.resolve();
+    await Promise.resolve();
+    assertEqual(loadCalls[0], targetIdx + 1);
   });
 });
 

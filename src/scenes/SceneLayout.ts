@@ -20,6 +20,7 @@ export function hitButton(btn: ButtonRect, x: number, y: number): boolean {
 /**
  * Title 화면의 N개 맵 버튼 그리드. 뷰포트 폭에 따라 열 수 결정.
  * 반환 배열의 index는 mapId-1에 대응한다.
+ * `contentHeight` 는 스크롤 가능한 최하단까지의 총 높이.
  */
 export function computeMapGridLayout(
   viewWidth: number,
@@ -29,6 +30,7 @@ export function computeMapGridLayout(
   readonly titleFontPx: number;
   readonly titleY: number;
   readonly buttons: ReadonlyArray<ButtonRect>;
+  readonly contentHeight: number;
 } {
   const titleY = Math.round(clamp(viewHeight * 0.12, 60, 160));
   const titleFontPx = Math.round(clamp(viewHeight * 0.07, 32, 72));
@@ -37,9 +39,9 @@ export function computeMapGridLayout(
   const gridTop = titleY + titleFontPx + Math.round(clamp(viewHeight * 0.05, 20, 60));
   const gridPadX = Math.round(clamp(viewWidth * 0.06, 16, 60));
   const available = viewWidth - gridPadX * 2;
-  const gap = Math.round(clamp(viewWidth * 0.02, 8, 20));
+  const gap = Math.round(clamp(viewWidth * 0.02, 10, 22));
   const btnW = Math.floor((available - gap * (cols - 1)) / cols);
-  const btnH = Math.round(btnW * 0.75);
+  const btnH = Math.round(btnW * 0.9);
   const buttons: ButtonRect[] = [];
   for (let i = 0; i < count; i++) {
     const r = Math.floor(i / cols);
@@ -51,7 +53,10 @@ export function computeMapGridLayout(
       height: btnH,
     });
   }
-  return { titleFontPx, titleY, buttons };
+  const rows = Math.ceil(count / cols);
+  const bottomPad = Math.round(clamp(viewHeight * 0.06, 24, 80));
+  const contentHeight = gridTop + rows * btnH + (rows - 1) * gap + bottomPad;
+  return { titleFontPx, titleY, buttons, contentHeight };
 }
 
 /**
