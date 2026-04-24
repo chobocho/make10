@@ -177,3 +177,12 @@
 - `tests/mapLoader.test.ts` — "수평 쌍 합=10" 주장 제거, "모든 셀 1~9" 로 완화.
 - `README.md` — 중력/종료 조건/맵 생성 설명 업데이트.
 - 최종: `npx tsc --noEmit` 에러 0, 테스트 **150/150 pass**, 번들 재생성.
+
+## 2026-04-24 — UI 변경: 타이머 숫자 → 무지개 진행 바
+
+- `UILayout` 에 `timerBar` + `hudY` 추가, `computeUILayout` 이 뷰포트 폭 전체 폭의 얇은 바(6~14px)를 상단에 배치.
+- `HUDState.timeLeft`(정수 초) → `timeProgress`(0~1 비율) 로 변경 — 매 프레임 매끄럽게 감소.
+- `UIRenderer.drawHUD` 에 `createLinearGradient` 로 ROYGBIV 7색 stops. 남은 비율만큼 왼쪽부터 채워 시간이 줄면 오른쪽(보라)부터 사라지고 결국 붉은 띠만 남아 긴박감 전달.
+- HUD 본체에서 `⏱ N` 텍스트 제거, 점수는 중앙 정렬로 이동.
+- `GameScene.render` — `timer.getRemainingMs() / getLimitMs()` 로 연속 진행도 전달.
+- 테스트: UIRenderer 레이아웃 4건 갱신 + 모든 fake ctx에 `createLinearGradient` 스텁 추가. 누적 **151/151 pass**.

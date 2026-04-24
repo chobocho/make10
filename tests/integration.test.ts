@@ -24,16 +24,20 @@ import {
 } from "../src/scenes/SceneLayout";
 
 function fakeRenderer(w = 480, h = 800): CanvasRenderer {
-  const ctx = new Proxy({} as Record<string, unknown>, {
-    get(target, p) {
-      if (p in target) return target[p as string];
-      return () => {};
+  const gradient = { addColorStop() {} };
+  const ctx = new Proxy(
+    { createLinearGradient: () => gradient } as unknown as Record<string, unknown>,
+    {
+      get(target, p) {
+        if (p in target) return target[p as string];
+        return () => {};
+      },
+      set(target, p, v) {
+        target[p as string] = v;
+        return true;
+      },
     },
-    set(target, p, v) {
-      target[p as string] = v;
-      return true;
-    },
-  }) as unknown as CanvasRenderingContext2D;
+  ) as unknown as CanvasRenderingContext2D;
   const canvas = {
     width: 0,
     height: 0,

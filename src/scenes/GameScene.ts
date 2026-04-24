@@ -123,8 +123,11 @@ export class GameScene implements Scene {
       invalidSelection: invalid,
       highlight: this.hint.getHighlighted(),
     });
+    const limitMs = this.timer.getLimitMs();
+    const timeProgress =
+      limitMs > 0 ? this.timer.getRemainingMs() / limitMs : 0;
     this.uiRenderer.drawHUD(this.uiLayout, {
-      timeLeft: this.timer.getRemainingSeconds(),
+      timeProgress,
       score: this.score,
       hintsLeft: this.hint.getRemaining(),
       highlighting: this.hint.isHighlighting(),

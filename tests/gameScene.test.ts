@@ -16,6 +16,7 @@ import { SaveManager, MemoryProgressStore } from "../src/storage/SaveManager";
 import type { MapData } from "../src/data/MapLoader";
 
 function makeFakeRenderer(width = 480, height = 800): CanvasRenderer {
+  const gradient = { addColorStop() {} };
   const ctx = {
     fillStyle: "",
     font: "",
@@ -34,6 +35,7 @@ function makeFakeRenderer(width = 480, height = 800): CanvasRenderer {
     moveTo() {},
     lineTo() {},
     stroke() {},
+    createLinearGradient: () => gradient,
   } as unknown as CanvasRenderingContext2D;
   const canvas = {
     width: 0,

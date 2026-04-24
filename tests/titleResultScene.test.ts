@@ -19,6 +19,7 @@ import {
 import type { GameResult } from "../src/scenes/GameScene";
 
 function fakeRenderer(w = 480, h = 800): CanvasRenderer {
+  const gradient = { addColorStop() {} };
   const ctx = new Proxy(
     {
       fillStyle: "",
@@ -27,6 +28,7 @@ function fakeRenderer(w = 480, h = 800): CanvasRenderer {
       font: "",
       textAlign: "left",
       textBaseline: "top",
+      createLinearGradient: () => gradient,
     } as unknown as Record<string, unknown>,
     {
       get(target, p) {
