@@ -1,0 +1,146 @@
+import {
+  describe,
+  test,
+  assertEqual,
+  assertTrue,
+  assertFalse,
+  assertThrows,
+  assertDeepEqual,
+} from "./runner";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import {
+  validateMap,
+  parseMapJson,
+  mapJsonUrl,
+  loadMap,
+} from "../src/data/MapLoader";
+import { findValidCombination } from "../src/game/Hint";
+import { Board } from "../src/game/Board";
+
+const DATA_DIR = join(__dirname, "..", "data");
+
+function readMap(id: number): string {
+  return readFileSync(join(DATA_DIR, `map${String(id).padStart(3, "0")}.json`), "utf-8");
+}
+
+describe("MapLoader — validation", () => {
+  test("validateMap: 정상 맵", () => {
+    const m = {
+      id: 1,
+      name: "test",
+      cols: 2,
+      rows: 2,
+      timeLimit: 30,
+      hintCount: 1,
+      targetScore: 0,
+      initialBoard: [
+        [1, 9],
+        [2, 8],
+      ],
+    };
+    assertTrue(validateMap(m));
+  });
+
+  test("validateMap: 값 범위 위반", () => {
+    assertFalse(
+      validateMap({
+        id: 1,
+        name: "x",
+        cols: 2,
+        rows: 1,
+        timeLimit: 10,
+        hintCount: 0,
+        targetScore: 0,
+        initialBoard: [[1, 10]],
+      }),
+    );
+  });
+
+  test("validateMap: 행/열 개수 불일치", () => {
+    assertFalse(
+      validateMap({
+        id: 1,
+        name: "x",
+        cols: 2,
+        rows: 2,
+        timeLimit: 10,
+        hintCount: 0,
+        targetScore: 0,
+        initialBoard: [[1, 2]],
+      }),
+    );
+  });
+
+  test("parseMapJson: 잘못된 JSON은 에러", () => {
+    assertThrows(() => parseMapJson("not-json"));
+  });
+
+  test("mapJsonUrl: 3자리 zero-padded", () => {
+    assertEqual(mapJsonUrl(7), "data/map007.json");
+    assertEqual(mapJsonUrl(123), "data/map123.json");
+  });
+
+  test("loadMap: 주입된 fetcher 사용", async () => {
+    const text = readMap(1);
+    const fakeFetch = async (url: string): Promise<Response> => {
+      assertEqual(url, "data/map001.json");
+      return new Response(text, { status: 200 });
+    };
+    const m = await loadMap(1, fakeFetch as unknown as typeof fetch);
+    assertEqual(m.id, 1);
+  });
+
+  test("loadMap: 404는 에러", async () => {
+    const fakeFetch = async (): Promise<Response> =>
+      new Response("", { status: 404 });
+    let threw = false;
+    try {
+      await loadMap(1, fakeFetch as unknown as typeof fetch);
+    } catch {
+      threw = true;
+    }
+    assertTrue(threw);
+  });
+});
+
+describe("생성된 맵 JSON 실제 검증", () => {
+  for (let id = 1; id <= 10; id++) {
+    test(`map${String(id).padStart(3, "0")}.json — 스키마 유효 & 유효 조합 존재`, () => {
+      const m = parseMapJson(readMap(id));
+      assertEqual(m.id, id);
+      assertEqual(m.initialBoard.length, m.rows);
+      for (const row of m.initialBoard) assertEqual(row.length, m.cols);
+      // Board 생성 가능해야 함
+      const board = new Board(m.initialBoard);
+      // 유효 조합이 적어도 1개 이상 존재해야 함 (solvable 시작 조건)
+      const combo = findValidCombination(board);
+      assertTrue(combo !== null, `map${id}: 유효 조합 없음`);
+    });
+  }
+
+  test("map001 합이 10인 쌍을 포함", () => {
+    const m = parseMapJson(readMap(1));
+    const board = new Board(m.initialBoard);
+    const combo = findValidCombination(board);
+    assertTrue(combo !== null);
+    const sum = combo!.reduce((s, [c, r]) => s + board.getCell(c, r), 0);
+    assertEqual(sum, 10);
+  });
+
+  test("맵별 제한 시간/힌트 수는 양의 정수", () => {
+    for (let id = 1; id <= 10; id++) {
+      const m = parseMapJson(readMap(id));
+      assertTrue(m.timeLimit > 0);
+      assertTrue(m.hintCount >= 0);
+    }
+  });
+
+  test("id 순서대로 저장됨", () => {
+    const ids: number[] = [];
+    for (let id = 1; id <= 10; id++) {
+      ids.push(parseMapJson(readMap(id)).id);
+    }
+    assertDeepEqual(ids, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  });
+});

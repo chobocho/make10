@@ -90,3 +90,10 @@
 - 모든 실패(미지원, 블록, 트랜잭션 오류)를 삼키고 `false`/`null`/`[]` 반환 → 게임 계속 진행.
 - `createDefaultSaveManager()` 팩토리: `globalThis.indexedDB` 유무 자동 감지.
 - `tests/saveManager.test.ts` 7건 추가(메모리 스토어 + 예외 스토어), 전체 pass (누적 98/98).
+
+## 2026-04-24 — 이슈 #12 맵 데이터 및 MapLoader
+
+- `tools/gen-maps.ts` — 합이 10인 수평 쌍을 타일링하는 맵 생성기. mulberry32 시드로 맵 id별 결정적 생성. 난이도 프리셋(cols/rows/timeLimit/hintCount)을 id 구간별로 자동 적용.
+- `data/map001.json` ~ `data/map010.json` 생성(4x5 ~ 6x9). 모든 맵에서 `findValidCombination` 이 비-null 을 반환함을 테스트로 보장.
+- `src/data/MapLoader.ts` — `validateMap` 엄격 스키마 검증 + `parseMapJson` + `loadMap(mapId, fetcher?)`. 테스트/번들 양쪽에서 fetch DI.
+- `tests/mapLoader.test.ts` 20건 추가(유효성 6 + 실제 맵 10 + 속성 2 + id 순서 1 + map001 합10 검증 1), 전체 pass (누적 118/118).
