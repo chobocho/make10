@@ -151,6 +151,22 @@ export class SaveManager {
     }
   }
 
+  /**
+   * 동일 mapId에 대해 기존 점수보다 높을 때만 덮어쓴다. 동점이면 유지.
+   * 최고 점수/시간 기록 보존 용도. 저장 여부를 boolean 으로 반환.
+   */
+  async saveBest(record: ProgressRecord): Promise<boolean> {
+    if (!this.store) return false;
+    try {
+      const existing = await this.store.get(record.mapId);
+      if (existing && existing.score >= record.score) return false;
+      await this.store.put(record);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async load(mapId: number): Promise<ProgressRecord | null> {
     if (!this.store) return null;
     try {

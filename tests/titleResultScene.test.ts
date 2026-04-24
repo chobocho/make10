@@ -204,14 +204,73 @@ describe("ResultScene", () => {
     assertEqual(transitions[transitions.length - 1].next, "title");
   });
 
-  test("cleared=true 시 saveManager.save 호출", async () => {
+  test("cleared=true 시 saveManager.saveBest 호출 (최고 점수만 유지)", async () => {
+    const { ctx } = makeCtx();
+    // 기존 높은 기록 선등록
+    await ctx.saveManager.save({
+      mapId: 4,
+      boardState: [],
+      score: 9999,
+      timeLeft: 0,
+      timestamp: 0,
+    });
+    const scene = new ResultScene(ctx);
+    scene.enter(gameResult(4, true)); // 새 점수 500
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    const rec = await ctx.saveManager.load(4);
+    assertEqual(rec?.score, 9999); // 낮은 점수로 덮어쓰지 않아야 함
+  });
+
+  test("cleared=false 시 저장하지 않음", async () => {
     const { ctx } = makeCtx();
     const scene = new ResultScene(ctx);
-    scene.enter(gameResult(4, true));
-    // fire-and-forget save — 다음 microtask
+    scene.enter(gameResult(7, false));
     await Promise.resolve();
     await Promise.resolve();
-    const list = await ctx.saveManager.list();
-    assertTrue(list.some((r) => r.mapId === 4));
+    const rec = await ctx.saveManager.load(7);
+    assertEqual(rec, null);
+  });
+});
+
+describe("TitleScene: 저장된 기록 반영", () => {
+  test("enter 시 saveManager.list 로딩 → bestScores 채워짐", async () => {
+    const { ctx } = makeCtx();
+    await ctx.saveManager.save({
+      mapId: 2,
+      boardState: [],
+      score: 500,
+      timeLeft: 30,
+      timestamp: 0,
+    });
+    const scene = new TitleScene(ctx);
+    scene.enter();
+    // 비동기 reload 대기
+    await Promise.resolve();
+    await Promise.resolve();
+    const best = (scene as unknown as { bestScores: Map<number, number> }).bestScores;
+    assertEqual(best.get(2), 500);
+  });
+
+  test("제목 화면 재진입 시 기록 재로드", async () => {
+    const { ctx } = makeCtx();
+    const scene = new TitleScene(ctx);
+    scene.enter();
+    await Promise.resolve();
+    // 이후 저장 발생
+    await ctx.saveManager.save({
+      mapId: 3,
+      boardState: [],
+      score: 700,
+      timeLeft: 20,
+      timestamp: 0,
+    });
+    // 다시 enter → 재로드
+    scene.enter();
+    await Promise.resolve();
+    await Promise.resolve();
+    const best = (scene as unknown as { bestScores: Map<number, number> }).bestScores;
+    assertEqual(best.get(3), 700);
   });
 });

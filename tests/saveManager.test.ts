@@ -71,6 +71,32 @@ describe("SaveManager (메모리 스토어 사용)", () => {
     assertFalse(await sm.delete(1));
   });
 
+  test("saveBest: 처음 저장은 성공", async () => {
+    const sm = new SaveManager(new MemoryProgressStore());
+    assertTrue(await sm.saveBest(sample(1, 300)));
+    assertEqual((await sm.load(1))?.score, 300);
+  });
+
+  test("saveBest: 기존보다 낮은 점수는 덮어쓰지 않음", async () => {
+    const sm = new SaveManager(new MemoryProgressStore());
+    await sm.saveBest(sample(1, 500));
+    assertFalse(await sm.saveBest(sample(1, 300)));
+    assertEqual((await sm.load(1))?.score, 500);
+  });
+
+  test("saveBest: 동점은 업데이트하지 않음", async () => {
+    const sm = new SaveManager(new MemoryProgressStore());
+    await sm.saveBest(sample(1, 500));
+    assertFalse(await sm.saveBest(sample(1, 500)));
+  });
+
+  test("saveBest: 높은 점수는 덮어씀", async () => {
+    const sm = new SaveManager(new MemoryProgressStore());
+    await sm.saveBest(sample(1, 300));
+    assertTrue(await sm.saveBest(sample(1, 700)));
+    assertEqual((await sm.load(1))?.score, 700);
+  });
+
   test("스토어 내부 오류는 false/null로 삼킴 (게임 계속)", async () => {
     class ThrowingStore implements ProgressStore {
       async put(): Promise<void> {
@@ -88,6 +114,7 @@ describe("SaveManager (메모리 스토어 사용)", () => {
     }
     const sm = new SaveManager(new ThrowingStore());
     assertFalse(await sm.save(sample(1, 0)));
+    assertFalse(await sm.saveBest(sample(1, 0)));
     assertEqual(await sm.load(1), null);
     assertFalse(await sm.delete(1));
     assertDeepEqual(await sm.list(), []);

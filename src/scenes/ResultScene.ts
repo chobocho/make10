@@ -47,9 +47,9 @@ export class ResultScene implements Scene {
     this.pressed = null;
     this.recomputeLayout();
     this.context.renderer.onResize(() => this.recomputeLayout());
-    // 결과를 저장 (fire-and-forget). 실패해도 게임은 계속.
+    // 클리어 기록은 최고 점수만 유지 (fire-and-forget). 실패해도 게임은 계속.
     if (this.result && this.result.cleared) {
-      void this.context.saveManager.save({
+      void this.context.saveManager.saveBest({
         mapId: this.result.mapId,
         boardState: [],
         score: this.result.score,

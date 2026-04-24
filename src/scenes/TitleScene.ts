@@ -12,7 +12,9 @@ const COLOR_BG = "#101820";
 const COLOR_TITLE = "#e0e6ee";
 const COLOR_BTN = "#3b4252";
 const COLOR_BTN_HOVER = "#4c566a";
+const COLOR_BTN_CLEARED = "#48604a";
 const COLOR_BTN_TEXT = "#eceff4";
+const COLOR_STAR = "#ebcb8b";
 
 export class TitleScene implements Scene {
   private readonly context: SceneContext;
@@ -21,6 +23,7 @@ export class TitleScene implements Scene {
   private titleY: number;
   private loading: boolean;
   private pressedIndex: number;
+  private bestScores: Map<number, number>;
 
   constructor(context: SceneContext) {
     this.context = context;
@@ -29,6 +32,7 @@ export class TitleScene implements Scene {
     this.titleY = 80;
     this.loading = false;
     this.pressedIndex = -1;
+    this.bestScores = new Map();
   }
 
   enter(): void {
@@ -36,6 +40,17 @@ export class TitleScene implements Scene {
     this.pressedIndex = -1;
     this.recomputeLayout();
     this.context.renderer.onResize(() => this.recomputeLayout());
+    // 저장된 최고 기록 로드 (타이틀 재진입마다 최신 반영).
+    void this.reloadProgress();
+  }
+
+  private async reloadProgress(): Promise<void> {
+    try {
+      const records = await this.context.saveManager.list();
+      this.bestScores = new Map(records.map((r) => [r.mapId, r.score]));
+    } catch {
+      this.bestScores = new Map();
+    }
   }
 
   exit(): void {
@@ -67,13 +82,34 @@ export class TitleScene implements Scene {
     ctx.fillText("Make 10", width / 2, this.titleY);
 
     const labelFont = Math.round(this.titleFontPx * 0.55);
-    ctx.font = `bold ${labelFont}px -apple-system, "Segoe UI Emoji", sans-serif`;
     for (let i = 0; i < this.buttons.length; i++) {
+      const mapId = i + 1;
+      const best = this.bestScores.get(mapId);
+      const cleared = best !== undefined;
       const b = this.buttons[i];
-      ctx.fillStyle = i === this.pressedIndex ? COLOR_BTN_HOVER : COLOR_BTN;
+      ctx.fillStyle =
+        i === this.pressedIndex
+          ? COLOR_BTN_HOVER
+          : cleared
+            ? COLOR_BTN_CLEARED
+            : COLOR_BTN;
       ctx.fillRect(b.x, b.y, b.width, b.height);
+
       ctx.fillStyle = COLOR_BTN_TEXT;
-      ctx.fillText(String(i + 1), b.x + b.width / 2, b.y + b.height / 2);
+      ctx.font = `bold ${labelFont}px -apple-system, "Segoe UI Emoji", sans-serif`;
+      const labelYOffset = cleared ? -b.height * 0.12 : 0;
+      ctx.fillText(
+        String(mapId),
+        b.x + b.width / 2,
+        b.y + b.height / 2 + labelYOffset,
+      );
+
+      if (cleared) {
+        const subFont = Math.round(b.height * 0.18);
+        ctx.font = `${subFont}px -apple-system, "Segoe UI Emoji", sans-serif`;
+        ctx.fillStyle = COLOR_STAR;
+        ctx.fillText(`★ ${best}`, b.x + b.width / 2, b.y + b.height * 0.78);
+      }
     }
 
     if (this.loading) {

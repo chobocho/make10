@@ -147,3 +147,16 @@
 - `tests/gameScene.test.ts` 힌트 버튼 테스트 업데이트 — press-only / press-then-release-outside 케이스 추가.
 - `README.md` 재작성 — 게임 방법/지원 환경/실행·빌드·테스트 지침/디렉토리 구조/리소스 출처.
 - 최종 검증: `npx tsc --noEmit` 에러 0건, `npx ts-node tests/runner.ts` **136/136 pass**, `./build.sh` → `release/dist.js` 27.3kb.
+
+## 2026-04-24 — 버그 수정: 성공 기록 유지 안 되는 문제
+
+**증상**: 맵 클리어 후 타이틀에 돌아가도 클리어 표시가 없고, 재플레이 시 이전 최고 점수가 더 낮은 점수로 덮이는 문제.
+
+**원인**:
+1. `SaveManager.save`는 동일 `mapId`의 기존 레코드를 무조건 덮어써 최고 점수가 보존되지 않음.
+2. `TitleScene`이 `saveManager.list()`를 읽지 않아 UI에 클리어 표시/최고 점수가 노출되지 않음.
+
+**수정**:
+- `SaveManager.saveBest(record)` 추가 — 기존 점수보다 높을 때만 덮어씀(동점/미만은 유지). `ResultScene`에서 클리어 저장은 `saveBest`로 교체.
+- `TitleScene` — 진입 시 `saveManager.list()` 로드해 `bestScores: Map<mapId, score>` 구성. 클리어된 버튼은 녹색 톤 + `★ NNN` 배지로 렌더링. 타이틀 재진입(결과→타이틀) 시 재로드되어 직전 플레이 결과 즉시 반영.
+- 테스트 추가: `saveBest`(높음/낮음/동점 4건) + ResultScene이 `saveBest` 사용 검증 + `cleared=false` 시 저장 안 함 + TitleScene 진입 로딩/재진입 재로딩 (누적 143/143 pass).
