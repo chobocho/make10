@@ -60,6 +60,41 @@ export function computeMapGridLayout(
 }
 
 /**
+ * Pause 오버레이의 3버튼(재개/다시하기/메인) 레이아웃. 세로 스택.
+ */
+export function computePauseMenuLayout(
+  viewWidth: number,
+  viewHeight: number,
+  topOffset: number,
+): {
+  readonly titleY: number;
+  readonly titleFontPx: number;
+  readonly resume: ButtonRect;
+  readonly restart: ButtonRect;
+  readonly exit: ButtonRect;
+} {
+  const available = Math.max(100, viewHeight - topOffset);
+  const btnW = Math.round(clamp(viewWidth * 0.6, 200, 360));
+  const btnH = Math.round(clamp(available * 0.1, 48, 82));
+  const gap = Math.round(clamp(available * 0.025, 12, 26));
+  const btnX = Math.round((viewWidth - btnW) / 2);
+  const titleFontPx = Math.round(clamp(available * 0.09, 36, 72));
+  const stackH = btnH * 3 + gap * 2;
+  const titleSpacing = Math.round(titleFontPx * 1.8);
+  const blockH = titleFontPx + titleSpacing + stackH;
+  const blockTop = topOffset + Math.round((available - blockH) / 2);
+  const titleY = blockTop + titleFontPx;
+  const firstBtnY = blockTop + titleFontPx + titleSpacing;
+  return {
+    titleY,
+    titleFontPx,
+    resume: { x: btnX, y: firstBtnY, width: btnW, height: btnH },
+    restart: { x: btnX, y: firstBtnY + btnH + gap, width: btnW, height: btnH },
+    exit: { x: btnX, y: firstBtnY + (btnH + gap) * 2, width: btnW, height: btnH },
+  };
+}
+
+/**
  * Result 화면의 3버튼(다시/다음/타이틀) 레이아웃. 하단 중앙 정렬.
  */
 export function computeResultButtonsLayout(

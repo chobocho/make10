@@ -22,6 +22,11 @@ import {
   isPauseButtonHit,
   UILayout,
 } from "../renderer/UIRenderer";
+import {
+  computePauseMenuLayout,
+  hitButton,
+  ButtonRect,
+} from "./SceneLayout";
 
 export interface GameSceneArgs {
   readonly map: MapData;
@@ -62,8 +67,10 @@ export class GameScene implements Scene {
   private ended: boolean;
   private pressedHintBtn: boolean;
   private pressedPauseBtn: boolean;
+  private pressedPauseMenuBtn: "resume" | "restart" | "exit" | null;
   private introMsLeft: number;
   private paused: boolean;
+  private pauseMenuLayout: ReturnType<typeof computePauseMenuLayout> | null;
 
   constructor(
     context: SceneContext,
@@ -85,29 +92,37 @@ export class GameScene implements Scene {
     this.ended = false;
     this.pressedHintBtn = false;
     this.pressedPauseBtn = false;
+    this.pressedPauseMenuBtn = null;
     this.introMsLeft = 0;
     this.paused = false;
+    this.pauseMenuLayout = null;
   }
 
   async enter(args?: unknown): Promise<void> {
     const a = args as GameSceneArgs | undefined;
     if (!a?.map) throw new Error("GameScene.enter: map 인자 필요.");
     this.map = a.map;
-    this.board = new Board(a.map.initialBoard);
+    this.setupGame();
+    this.recomputeLayout();
+    this.context.renderer.onResize(() => this.recomputeLayout());
+  }
+
+  /** 현재 `this.map`을 기반으로 게임 상태를 초기화/재초기화한다. */
+  private setupGame(): void {
+    if (!this.map) return;
+    this.board = new Board(this.map.initialBoard);
     this.selector = new Selector(this.board);
-    this.timer = new Timer(a.map.timeLimit);
-    this.hint = new Hint(this.board, a.map.hintCount);
+    this.timer = new Timer(this.map.timeLimit);
+    this.hint = new Hint(this.board, this.map.hintCount);
     this.score = 0;
     this.ended = false;
     this.pressedHintBtn = false;
     this.pressedPauseBtn = false;
+    this.pressedPauseMenuBtn = null;
     this.paused = false;
     this.introMsLeft = this.introDurationMs;
     this.timer.onExpired(() => this.endGame("timeup"));
-    // 인트로 오버레이가 없으면 즉시 시작, 있으면 인트로가 끝난 뒤 start.
     if (this.introMsLeft <= 0) this.timer.start();
-    this.recomputeLayout();
-    this.context.renderer.onResize(() => this.recomputeLayout());
   }
 
   private isInIntro(): boolean {
@@ -128,12 +143,35 @@ export class GameScene implements Scene {
     this.selector?.cancel();
     this.hint?.clear();
     this.pressedHintBtn = false;
+    this.computePauseMenu();
   }
 
   resumeGame(): void {
     if (!this.paused || this.ended) return;
     this.paused = false;
     this.timer?.resume();
+    this.pressedPauseMenuBtn = null;
+  }
+
+  /** 현재 맵을 재시작 (점수/보드/타이머 리셋, 인트로 재표시). */
+  restartMap(): void {
+    if (!this.map) return;
+    this.setupGame();
+  }
+
+  /** 타이틀로 이동. */
+  private goToTitle(): void {
+    this.ended = true; // update()/입력 처리 중단
+    this.context.transition("title");
+  }
+
+  private computePauseMenu(): void {
+    const size = this.context.renderer.getSize();
+    this.pauseMenuLayout = computePauseMenuLayout(
+      size.width,
+      size.height,
+      this.uiLayout.uiHeight,
+    );
   }
 
   isPaused(): boolean {
@@ -145,6 +183,7 @@ export class GameScene implements Scene {
     this.paused = false;
     this.pressedHintBtn = false;
     this.pressedPauseBtn = false;
+    this.pressedPauseMenuBtn = null;
   }
 
   private recomputeLayout(): void {
@@ -159,6 +198,7 @@ export class GameScene implements Scene {
     };
     const layout = computeBoardLayout(bounds, this.map.cols, this.map.rows);
     this.boardRenderer.setLayout(layout);
+    if (this.paused) this.computePauseMenu();
   }
 
   update(deltaMs: number): void {
@@ -205,25 +245,56 @@ export class GameScene implements Scene {
   }
 
   private drawPauseOverlay(): void {
+    if (!this.pauseMenuLayout) this.computePauseMenu();
+    const layout = this.pauseMenuLayout;
+    if (!layout) return;
     const ctx = this.context.renderer.getCtx();
     const { width, height } = this.context.renderer.getSize();
-    ctx.fillStyle = "rgba(16, 24, 32, 0.82)";
+
+    // 반투명 배경 (HUD 제외 영역)
+    ctx.fillStyle = "rgba(16, 24, 32, 0.86)";
     ctx.fillRect(0, this.uiLayout.uiHeight, width, height - this.uiLayout.uiHeight);
 
-    const titleFont = Math.round(Math.min(width, height) * 0.08);
-    const bodyFont = Math.round(Math.min(width, height) * 0.035);
-    const cx = width / 2;
-    const cy = (height + this.uiLayout.uiHeight) / 2;
-
+    // 헤드라인
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillStyle = "#e0e6ee";
-    ctx.font = `bold ${titleFont}px -apple-system, "Segoe UI Emoji", sans-serif`;
-    ctx.fillText("⏸ 일시정지", cx, cy - titleFont * 0.3);
+    ctx.font = `bold ${layout.titleFontPx}px -apple-system, "Segoe UI Emoji", sans-serif`;
+    ctx.fillText("⏸ 일시정지", width / 2, layout.titleY);
 
-    ctx.fillStyle = "#a3b3c2";
-    ctx.font = `${bodyFont}px -apple-system, sans-serif`;
-    ctx.fillText("▶ 버튼을 누르거나 화면을 탭하세요", cx, cy + titleFont * 0.8);
+    // 3개 버튼
+    this.drawPauseMenuButton(ctx, layout.resume, "resume", "▶  재개");
+    this.drawPauseMenuButton(ctx, layout.restart, "restart", "🔁  다시하기");
+    this.drawPauseMenuButton(ctx, layout.exit, "exit", "🏠  메인");
+  }
+
+  private drawPauseMenuButton(
+    ctx: CanvasRenderingContext2D,
+    rect: ButtonRect,
+    id: "resume" | "restart" | "exit",
+    label: string,
+  ): void {
+    const pressed = this.pressedPauseMenuBtn === id;
+    const bg = pressed ? "#4c566a" : "#3b4252";
+    ctx.fillStyle = bg;
+    ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+    ctx.strokeStyle = "#5d6872";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.width - 1, rect.height - 1);
+    ctx.fillStyle = "#eceff4";
+    const fontPx = Math.round(rect.height * 0.42);
+    ctx.font = `600 ${fontPx}px -apple-system, "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(label, rect.x + rect.width / 2, rect.y + rect.height / 2);
+  }
+
+  private hitPauseMenuButton(x: number, y: number): "resume" | "restart" | "exit" | null {
+    if (!this.pauseMenuLayout) return null;
+    if (hitButton(this.pauseMenuLayout.resume, x, y)) return "resume";
+    if (hitButton(this.pauseMenuLayout.restart, x, y)) return "restart";
+    if (hitButton(this.pauseMenuLayout.exit, x, y)) return "exit";
+    return null;
   }
 
   private drawIntroOverlay(): void {
@@ -280,7 +351,6 @@ export class GameScene implements Scene {
       return;
     }
     if (y < this.uiLayout.uiHeight) {
-      // HUD 영역 — 일시정지/힌트 버튼 press 시작.
       if (isPauseButtonHit(this.uiLayout, x, y)) {
         this.pressedPauseBtn = true;
       } else if (!this.paused && isHintButtonHit(this.uiLayout, x, y)) {
@@ -289,9 +359,8 @@ export class GameScene implements Scene {
       return;
     }
     if (this.paused) {
-      // 보드 영역 탭 → 재개.
-      this.context.audio.play("button");
-      this.resumeGame();
+      // 일시정지 오버레이의 버튼 영역 press.
+      this.pressedPauseMenuBtn = this.hitPauseMenuButton(x, y);
       return;
     }
     const layout = this.boardRenderer.getLayout();
@@ -349,6 +418,19 @@ export class GameScene implements Scene {
       return;
     }
 
+    // 일시정지 오버레이 버튼 press → release 인 바운스
+    if (this.pressedPauseMenuBtn) {
+      const btn = this.pressedPauseMenuBtn;
+      this.pressedPauseMenuBtn = null;
+      if (!Number.isFinite(x) || !Number.isFinite(y) || this.hitPauseMenuButton(x, y) === btn) {
+        this.context.audio.play("button");
+        if (btn === "resume") this.resumeGame();
+        else if (btn === "restart") this.restartMap();
+        else if (btn === "exit") this.goToTitle();
+      }
+      return;
+    }
+
     if (this.paused) return;
     if (!this.selector || !this.board) return;
     const result = this.selector.commit();
@@ -370,6 +452,7 @@ export class GameScene implements Scene {
   onPointerCancel(): void {
     this.pressedHintBtn = false;
     this.pressedPauseBtn = false;
+    this.pressedPauseMenuBtn = null;
     this.selector?.cancel();
   }
 

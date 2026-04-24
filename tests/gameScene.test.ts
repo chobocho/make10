@@ -230,7 +230,7 @@ describe("GameScene", () => {
     assertEqual(timer.getRemainingMs(), before);
   });
 
-  test("일시정지 중 보드 탭 → 재개", async () => {
+  test("일시정지 오버레이 '재개' 버튼 탭 → 재개", async () => {
     const r = makeFakeRenderer();
     const { context } = makeCtx(r);
     const scene = new GameScene(context, Math.random, 0);
@@ -238,13 +238,90 @@ describe("GameScene", () => {
     scene.render();
     scene.pauseGame();
     assertTrue(scene.isPaused());
-    // 보드 영역 탭
-    const layout = (scene as unknown as { boardRenderer: { getLayout(): any } }).boardRenderer.getLayout();
-    scene.onPointerDown!(
-      layout.originX + layout.cellSize / 2,
-      layout.originY + layout.cellSize / 2,
-    );
+    const menu = (scene as unknown as {
+      pauseMenuLayout: { resume: { x: number; y: number; width: number; height: number } };
+    }).pauseMenuLayout;
+    const cx = menu.resume.x + menu.resume.width / 2;
+    const cy = menu.resume.y + menu.resume.height / 2;
+    scene.onPointerDown!(cx, cy);
+    scene.onPointerUp!(cx, cy);
     assertFalse(scene.isPaused());
+  });
+
+  test("일시정지 오버레이 '다시하기' → 점수/보드 리셋", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    // RNG=() → 0.5 고정 (리필 값 1+floor(0.5*9)=5). 5가 가득 리필되어도
+    // (5,5) 2셀 조합이 가능하므로 stuck 없이 게임 지속.
+    const scene = new GameScene(context, () => 0.5, 0);
+    await scene.enter({
+      map: {
+        id: 99,
+        name: "restart-test",
+        cols: 2,
+        rows: 2,
+        timeLimit: 60,
+        hintCount: 0,
+        targetScore: 0,
+        starThresholds: [200, 500, 1000],
+        initialBoard: [
+          [4, 6],
+          [5, 5],
+        ],
+      },
+    });
+    scene.render();
+    const b = (scene as unknown as { boardRenderer: { getLayout(): any } }).boardRenderer.getLayout();
+    const a = { x: b.originX + b.cellSize / 2, y: b.originY + b.cellSize / 2 };
+    const c = { x: b.originX + b.cellSize + b.cellSize / 2, y: b.originY + b.cellSize / 2 };
+    scene.onPointerDown!(a.x, a.y);
+    scene.onPointerMove!(c.x, c.y);
+    scene.onPointerUp!(c.x, c.y);
+    assertTrue(scene._getScore() >= 100);
+    assertFalse(scene._isEnded());
+
+    scene.pauseGame();
+    const menu = (scene as unknown as {
+      pauseMenuLayout: { restart: { x: number; y: number; width: number; height: number } };
+    }).pauseMenuLayout;
+    const rx = menu.restart.x + menu.restart.width / 2;
+    const ry = menu.restart.y + menu.restart.height / 2;
+    scene.onPointerDown!(rx, ry);
+    scene.onPointerUp!(rx, ry);
+    assertEqual(scene._getScore(), 0);
+    assertFalse(scene.isPaused());
+    assertFalse(scene._isEnded());
+  });
+
+  test("일시정지 오버레이 '메인' → title 전환", async () => {
+    const r = makeFakeRenderer();
+    const { context, transitions } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 0);
+    await scene.enter({ map: tinyMap() });
+    scene.render();
+    scene.pauseGame();
+    const menu = (scene as unknown as {
+      pauseMenuLayout: { exit: { x: number; y: number; width: number; height: number } };
+    }).pauseMenuLayout;
+    const ex = menu.exit.x + menu.exit.width / 2;
+    const ey = menu.exit.y + menu.exit.height / 2;
+    scene.onPointerDown!(ex, ey);
+    scene.onPointerUp!(ex, ey);
+    assertEqual(transitions[transitions.length - 1].next, "title");
+  });
+
+  test("일시정지 중 오버레이 밖(빈 영역) 탭 → 유지", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 0);
+    await scene.enter({ map: tinyMap() });
+    scene.render();
+    scene.pauseGame();
+    assertTrue(scene.isPaused());
+    // 어떤 버튼도 히트하지 않는 좌표 (오른쪽 아래 구석 가정)
+    scene.onPointerDown!(1, 9999);
+    scene.onPointerUp!(1, 9999);
+    assertTrue(scene.isPaused());
   });
 
   test("일시정지 중에는 힌트 버튼 입력 무시", async () => {

@@ -260,3 +260,20 @@
     - `scrollY` 클램프 `[0, maxScrollY]`. 히트 테스트는 `y + scrollY` 로 로지컬 좌표 변환.
     - 가시 영역 밖 버튼은 컬링으로 생략.
 - 테스트 4건 추가 (100 맵 시 maxScrollY>0, 드래그 스크롤로 탭 취소, 미세 이동은 탭 유지, 스크롤 후 탭 정확히 히트). 누적 **177/177 pass**.
+
+## 2026-04-24 — 일시정지 오버레이에 다시하기 / 메인 버튼 추가
+
+**누락**: 게임 화면에서 타이틀로 나가거나 현재 맵을 재시작할 UI 없음.
+
+- `SceneLayout.computePauseMenuLayout(width, height, topOffset)` 추가 — 3개 세로 버튼(resume/restart/exit) + 타이틀 위치 반환.
+- `GameScene`:
+  - `setupGame()` 추출 — `enter` 와 `restartMap()` 가 공유해 상태/타이머 초기화.
+  - 공개 `restartMap()` (현재 `this.map` 재사용, 인트로 다시 표시).
+  - private `goToTitle()` — `context.transition("title")`.
+  - pauseGame 시 `computePauseMenu()` 호출해 버튼 레이아웃 계산.
+  - `drawPauseOverlay` — 헤드라인 "⏸ 일시정지" + `▶ 재개 / 🔁 다시하기 / 🏠 메인` 3개 버튼 세로 스택.
+  - `onPointerDown` — paused 상태에서 버튼 영역 히트 테스트 후 `pressedPauseMenuBtn` 기록.
+  - `onPointerUp` — press+release 인 바운스로 버튼 확정: resume → `resumeGame`, restart → `restartMap`, exit → `goToTitle`.
+  - 이전의 "보드 탭으로 재개" 동작은 제거 (명시적 버튼으로만 재개).
+- 테스트 3건 추가(재개/다시하기/메인 각각) + 기존 "보드 탭 재개" 테스트 업데이트 + "빈 영역 탭 시 유지" 테스트. 누적 **180/180 pass**.
+- README: 일시정지 메뉴 구성 설명 업데이트.
