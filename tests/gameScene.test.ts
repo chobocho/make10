@@ -59,6 +59,10 @@ function makeCtx(renderer: CanvasRenderer): {
     audio,
     saveManager: new SaveManager(new MemoryProgressStore()),
     transition: (next, args) => transitions.push({ next, args }),
+    loadMap: async () => {
+      throw new Error("not used");
+    },
+    maxMapId: 10,
   };
   return { context, audioCalls, transitions };
 }

@@ -5,6 +5,7 @@
 import type { CanvasRenderer } from "../renderer/CanvasRenderer";
 import type { AudioManager } from "../audio/AudioManager";
 import type { SaveManager } from "../storage/SaveManager";
+import type { MapData } from "../data/MapLoader";
 
 export type SceneId = "title" | "game" | "result";
 
@@ -13,6 +14,8 @@ export interface SceneContext {
   readonly audio: AudioManager;
   readonly saveManager: SaveManager;
   readonly transition: (next: SceneId, args?: unknown) => void;
+  readonly loadMap: (mapId: number) => Promise<MapData>;
+  readonly maxMapId: number;
 }
 
 export interface Scene {

@@ -108,3 +108,11 @@
   - 완료 시 `result` 씬으로 `GameResult` 전달.
   - 리사이즈 대응: `renderer.onResize`로 보드/UI 레이아웃 재계산.
 - `tests/uiRenderer.test.ts` 4건 + `tests/gameScene.test.ts` 5건 추가, 전체 pass (누적 127/127).
+
+## 2026-04-24 — 이슈 #14 TitleScene / ResultScene
+
+- `SceneContext`에 `loadMap`, `maxMapId` 필드 추가 — 씬이 맵 데이터를 비동기로 가져올 수 있도록.
+- `src/scenes/SceneLayout.ts` — 순수 레이아웃 함수 (`computeMapGridLayout`, `computeResultButtonsLayout`, `hitButton`). 테스트 가능한 분리된 수식.
+- `src/scenes/TitleScene.ts` — 타이틀 + 맵 선택 그리드 (뷰포트 폭별 3~5열). 클릭 시 `context.loadMap(id)` 비동기 로딩 → GameScene 전환.
+- `src/scenes/ResultScene.ts` — 클리어/실패 헤드라인, 점수·남은 시간 표시, `다시/다음/타이틀` 버튼. next는 `maxMapId` 초과 시 비활성. 클리어 시 `saveManager.save` fire-and-forget.
+- `tests/titleResultScene.test.ts` 9건 추가(레이아웃 2 + TitleScene 2 + ResultScene 5), 전체 pass (누적 136/136).
