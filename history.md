@@ -73,3 +73,12 @@
 - 좌표는 대상의 `getBoundingClientRect` 기준 CSS 픽셀 로컬 좌표로 변환.
 - fake target으로 DOM 없이 down/move/up, 2번째 포인터 무시, cancel 동작 검증.
 - `tests/pointerInput.test.ts` 5건 추가, 전체 pass (누적 84/84).
+
+## 2026-04-24 — 이슈 #10 AudioManager 구현
+
+- `src/audio/AudioManager.ts` — Web Audio API + OscillatorNode 합성 방식 효과음.
+- 자산 번들 대신 합성 채택 이유: 번들 크기 최소화 + 외부 런타임 금지 원칙 부합. CLAUDE.md의 base64 내장은 향후 확장 여지로 남겨둠.
+- 사운드 7종: select/remove/hint/invalid/clear/gameover/button — 각각 주파수·파형·지속시간 사전 정의.
+- 브라우저 자동재생 정책 대응: 컨텍스트 지연 생성 + suspended 시 `resume`.
+- 의존성 주입 `ctxCtor`로 Node 테스트에서 fake AudioContext 사용.
+- `tests/audioManager.test.ts` 7건 추가, 전체 pass (누적 91/91).
