@@ -80,9 +80,10 @@ export interface HUDState {
 const COLOR_HUD_BG = "#1b222b";
 const COLOR_BAR_BG = "#2a323c";
 const COLOR_TEXT = "#e0e6ee";
-const COLOR_BTN = "#4c566a";
-const COLOR_BTN_DISABLED = "#2e3440";
-const COLOR_BTN_ACTIVE = "#ebcb8b";
+/** 활성 상태(일시정지 중 / 힌트 하이라이트 중) 아이콘 색. */
+const COLOR_ICON_ACTIVE = "#ebcb8b";
+/** 비활성(힌트 0) 아이콘 색. */
+const COLOR_ICON_DISABLED = "#5d6872";
 
 /** ROYGBIV 표준 7색 — 좌측이 '위험(빨강)'이 되도록 배치. */
 const RAINBOW_STOPS: ReadonlyArray<readonly [number, string]> = [
@@ -136,11 +137,10 @@ export class UIRenderer {
     ctx.font = `${fontPx}px -apple-system, "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
     ctx.textBaseline = "middle";
 
+    // 버튼 배경은 투명 — 아이콘/텍스트만 그리고 색상으로 상태를 표현한다.
     // 일시정지 버튼 (좌측)
     const pauseB = layout.pauseButton;
-    ctx.fillStyle = state.paused === true ? COLOR_BTN_ACTIVE : COLOR_BTN;
-    ctx.fillRect(pauseB.x, pauseB.y, pauseB.width, pauseB.height);
-    ctx.fillStyle = COLOR_TEXT;
+    ctx.fillStyle = state.paused === true ? COLOR_ICON_ACTIVE : COLOR_TEXT;
     ctx.textAlign = "center";
     ctx.fillText(
       state.paused === true ? "▶" : "⏸",
@@ -156,11 +156,14 @@ export class UIRenderer {
 
     // 힌트 버튼 (우측)
     const b = layout.hintButton;
-    const active = state.highlighting === true;
-    ctx.fillStyle =
-      state.hintsLeft <= 0 ? COLOR_BTN_DISABLED : active ? COLOR_BTN_ACTIVE : COLOR_BTN;
-    ctx.fillRect(b.x, b.y, b.width, b.height);
-    ctx.fillStyle = state.hintsLeft <= 0 ? "#4c566a" : COLOR_TEXT;
+    const highlighting = state.highlighting === true;
+    const hintColor =
+      state.hintsLeft <= 0
+        ? COLOR_ICON_DISABLED
+        : highlighting
+          ? COLOR_ICON_ACTIVE
+          : COLOR_TEXT;
+    ctx.fillStyle = hintColor;
     ctx.fillText(`💡 ${state.hintsLeft}`, b.x + b.width / 2, b.y + b.height / 2);
   }
 
