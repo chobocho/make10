@@ -19,3 +19,11 @@
 - `tests/runner.test.ts` — 러너 어설션 셀프 체크 7건 추가, 전체 pass.
 - `tsconfig.json`에 `ts-node` 블록 추가 — 테스트 실행 시 `module: CommonJS`, `transpileOnly: true`로 오버라이드. `package.json`에서 `"type": "module"` 제거하여 CJS ts-node 호환성 확보.
 - 실행: `npx ts-node tests/runner.ts` → 7/7 pass.
+
+## 2026-04-24 — 이슈 #03 Board 모듈 구현
+
+- `src/game/Board.ts` — 격자 데이터 구조 + 제거/질의 API. 셀 값 0(빈 칸)/1~9(유효값). 중력/보충 없음.
+- API: `getCols`, `getRows`, `inBounds`, `getCell`, `isEmpty`, `clearCell`, `clearCells`, `isCleared`, `sumAt`, `snapshot`, `remainingCount`, `nonEmptyCells`.
+- 좌표 규약: `(col, row)` — x 먼저, y 나중.
+- 검증: 잘못된 값(0~9 정수 외)·행 길이 불일치·빈 보드 생성자에서 즉시 에러.
+- `tests/board.test.ts` 15건 추가, 전체 pass.
