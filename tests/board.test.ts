@@ -194,6 +194,50 @@ describe("Board", () => {
     assertDeepEqual(b.snapshot(), [[0], [1], [3]]);
   });
 
+  test("refill: 빈 칸을 1~9로 채우고 반환값은 채워진 개수", () => {
+    const b = new Board([
+      [1, 0, 3],
+      [0, 0, 6],
+    ]);
+    const filled = b.refill(() => 0);
+    assertEqual(filled, 3);
+    const snap = b.snapshot();
+    // 0이 없어야 하며 모든 값은 1~9
+    for (const row of snap) {
+      for (const v of row) {
+        assertTrue(v >= 1 && v <= 9);
+      }
+    }
+    // 기존 non-empty 값은 보존
+    assertEqual(snap[0][0], 1);
+    assertEqual(snap[0][2], 3);
+    assertEqual(snap[1][2], 6);
+  });
+
+  test("refill: 주입된 RNG가 0 → 모든 빈 칸이 1", () => {
+    const b = new Board([
+      [1, 0],
+      [0, 2],
+    ]);
+    b.refill(() => 0);
+    const snap = b.snapshot();
+    assertEqual(snap[0][1], 1);
+    assertEqual(snap[1][0], 1);
+  });
+
+  test("refill: 빈 칸이 없으면 0 반환, 값 불변", () => {
+    const b = new Board([
+      [1, 2],
+      [3, 4],
+    ]);
+    const filled = b.refill(() => 0.5);
+    assertEqual(filled, 0);
+    assertDeepEqual(b.snapshot(), [
+      [1, 2],
+      [3, 4],
+    ]);
+  });
+
   test("nonEmptyCells 순회", () => {
     const b = new Board([
       [1, 0],

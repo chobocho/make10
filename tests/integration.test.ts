@@ -170,8 +170,8 @@ async function clearAllPairs(scene: GameScene, map: MapData): Promise<void> {
 }
 
 describe("Integration: Title → Game → Result", () => {
-  test("맵1 선택 → 클리어 → result 전환 → retry 반복", async () => {
-    const { ctx, fsm, audioCalls, saveManager } = buildContext();
+  test("맵1 선택 → 매치 반복(보드 리필) → 타이머 만료 → result → retry", async () => {
+    const { ctx, fsm, audioCalls } = buildContext();
     fsm.register("title", new TitleScene(ctx));
     fsm.register("game", new GameScene(ctx));
     fsm.register("result", new ResultScene(ctx));
@@ -184,43 +184,37 @@ describe("Integration: Title → Game → Result", () => {
     const size = ctx.renderer.getSize();
     const grid = computeMapGridLayout(size.width, size.height, ctx.maxMapId);
     const firstBtn = grid.buttons[0];
-    fsm.onPointerDown(
-      firstBtn.x + firstBtn.width / 2,
-      firstBtn.y + firstBtn.height / 2,
-    );
-    fsm.onPointerUp(
-      firstBtn.x + firstBtn.width / 2,
-      firstBtn.y + firstBtn.height / 2,
-    );
+    fsm.onPointerDown(firstBtn.x + firstBtn.width / 2, firstBtn.y + firstBtn.height / 2);
+    fsm.onPointerUp(firstBtn.x + firstBtn.width / 2, firstBtn.y + firstBtn.height / 2);
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
     assertEqual(fsm.getCurrentId(), "game");
 
+    // 한 번 매치 (리필로 보드는 가득 유지)
     const gameScene = fsm.getCurrent() as GameScene;
     const map = pairTiledFixture(1);
     await clearAllPairs(gameScene, map);
+    // 매치 후에도 game 씬 유지 (리필되므로 clear/stuck 모두 발생 X with Math.random)
+    assertTrue((gameScene as unknown as { _getScore(): number })._getScore() >= 100);
+    // 보드 가득 차있음 확인
+    const snap = (gameScene as unknown as { board: { snapshot(): number[][] } }).board.snapshot();
+    for (const row of snap) for (const v of row) assertTrue(v !== 0);
 
+    // 타이머 강제 만료 → result 전환
+    fsm.update(300_000);
     await Promise.resolve();
     await Promise.resolve();
     assertEqual(fsm.getCurrentId(), "result");
-    assertTrue(audioCalls.includes("clear"));
+    assertTrue(audioCalls.includes("gameover"));
 
-    await Promise.resolve();
-    const savedList = await saveManager.list();
-    assertTrue(savedList.some((r) => r.mapId === 1));
-
+    // retry
     const btns = computeResultButtonsLayout(size.width, size.height);
     fsm.onPointerDown(btns.retry.x + 1, btns.retry.y + 1);
     fsm.onPointerUp(btns.retry.x + 1, btns.retry.y + 1);
     await Promise.resolve();
     await Promise.resolve();
     assertEqual(fsm.getCurrentId(), "game");
-
-    await clearAllPairs(fsm.getCurrent() as GameScene, map);
-    await Promise.resolve();
-    await Promise.resolve();
-    assertEqual(fsm.getCurrentId(), "result");
   });
 
   test("타이머 만료 → reason=timeup 결과에서 next 가능", async () => {
@@ -247,7 +241,7 @@ describe("Integration: Title → Game → Result", () => {
     assertEqual(fsm.getCurrentId(), "game");
   });
 
-  test("유효 조합 소진 → reason=stuck 로 종료", async () => {
+  test("리필 후에도 조합 없으면 reason=stuck (RNG 주입으로 모두 1 생성)", async () => {
     const stuckMap: MapData = {
       id: 1,
       name: "stuck-test",
@@ -256,14 +250,14 @@ describe("Integration: Title → Game → Result", () => {
       timeLimit: 60,
       hintCount: 0,
       targetScore: 0,
-      // 초기에 (3,7) 가로 쌍 1개뿐, 제거 후 남는 (1,1)은 합=2라 유효 조합 없음
       initialBoard: [
         [3, 7],
         [1, 1],
       ],
     };
     const { ctx, fsm } = buildContext(() => stuckMap);
-    fsm.register("game", new GameScene(ctx));
+    // RNG=0 → 리필이 모두 1 → 2x2 전체 1 → stuck
+    fsm.register("game", new GameScene(ctx, () => 0));
     fsm.register("result", new ResultScene(ctx));
     await fsm.start("game", { map: stuckMap });
     const scene = fsm.getCurrent() as GameScene;

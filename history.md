@@ -186,3 +186,18 @@
 - HUD 본체에서 `⏱ N` 텍스트 제거, 점수는 중앙 정렬로 이동.
 - `GameScene.render` — `timer.getRemainingMs() / getLimitMs()` 로 연속 진행도 전달.
 - 테스트: UIRenderer 레이아웃 4건 갱신 + 모든 fake ctx에 `createLinearGradient` 스텁 추가. 누적 **151/151 pass**.
+
+## 2026-04-24 — 규칙 변경: 블럭 리필 (보드 항상 가득)
+
+**변경**: 중력 적용 후 상단의 빈 칸이 **새 임의 블럭(1~9)**으로 채워져, 보드가 항상 가득 찬 상태를 유지. 시각적으로 "위에서 새 블럭이 내려오는" 효과.
+
+- `Board.refill(randomFn?)` 추가 — 남은 빈 칸을 1~9로 채움. 주입된 RNG로 결정적 테스트 가능. 반환값은 채워진 셀 수.
+- `GameScene` — `randomFn` 생성자 인자(기본 `Math.random`) + 매치 성공 시 `clearCells` → `applyGravity` → `refill(randomFn)` 순서로 처리.
+- `isCleared()` 분기 제거 (리필로 실질적으로 false). `stuck` 검사는 유지하지만 확률적으로 드뭄.
+- `CLAUDE.md` §2-3/§2-6 업데이트 — 리필 규칙 명시, 주 종료 경로를 timeup 으로.
+- `README.md` — 리필 동작 설명 추가, 점수 규칙에서 클리어 보너스 삭제.
+- 테스트:
+  - `board.test.ts` — refill 3건 (채워진 수/RNG 주입/불변).
+  - `gameScene.test.ts` — 매치 후 보드 가득 유지, refill 값 검증, stuck 은 RNG=0 주입으로 강제.
+  - `integration.test.ts` — "클리어" 플로우 → "매치 후 타이머 만료 → result → retry" 로 교체. stuck 플로우는 `new GameScene(ctx, () => 0)` 로 RNG 주입.
+- 최종: `npx tsc --noEmit` 에러 0, 테스트 **154/154 pass**, 번들 재생성.

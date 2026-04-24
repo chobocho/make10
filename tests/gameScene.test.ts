@@ -95,13 +95,13 @@ describe("GameScene", () => {
     assertFalse(scene._isEnded());
   });
 
-  test("보드 클릭(down) 후 인접 셀 드래그(move) → up: 합 10 제거 & 클리어", async () => {
+  test("합 10 드래그 → remove 사운드 + 점수 +100 + 보드 리필로 가득 유지", async () => {
     const r = makeFakeRenderer();
-    const { context, audioCalls, transitions } = makeCtx(r);
-    const scene = new GameScene(context);
+    const { context, audioCalls } = makeCtx(r);
+    // RNG=0 → 리필 값은 모두 1 (2x1 맵에서는 1+1=2라 유효 조합 없음 → stuck)
+    const scene = new GameScene(context, () => 0);
     await scene.enter({ map: tinyMap() });
-    scene.render(); // 레이아웃 반영
-    // 보드 레이아웃상 두 셀의 중심 좌표로 드래그
+    scene.render();
     const layout = (scene as unknown as { boardRenderer: { getLayout(): any } }).boardRenderer.getLayout();
     const cx1 = layout.originX + layout.cellSize / 2;
     const cx2 = layout.originX + layout.cellSize + layout.cellSize / 2;
@@ -110,13 +110,11 @@ describe("GameScene", () => {
     scene.onPointerMove!(cx2, cy);
     scene.onPointerUp!(cx2, cy);
     assertTrue(audioCalls.includes("remove"));
-    assertTrue(scene._isEnded());
-    const last = transitions[transitions.length - 1];
-    assertEqual(last.next, "result");
-    const res = last.args as GameResult;
-    assertTrue(res.cleared);
-    // 점수: 100 (pair) + 남은 초 * 10 = clear 보너스 포함
-    assertTrue(res.score >= 100);
+    // 점수 반영
+    assertTrue(scene._getScore() >= 100);
+    // 보드는 리필되어 여전히 꽉참 (빈 칸 0이 없음)
+    const snap = (scene as unknown as { board: { snapshot(): number[][] } }).board.snapshot();
+    for (const row of snap) for (const v of row) assertTrue(v !== 0);
   });
 
   test("타이머 만료 → gameover 전환", async () => {
@@ -163,10 +161,11 @@ describe("GameScene", () => {
     assertFalse(audioCalls.includes("hint"));
   });
 
-  test("쌍 제거 후 중력: 위 행의 셀들이 아래로 내려옴", async () => {
+  test("쌍 제거 후 중력 + 리필: 빈 자리가 새 블럭으로 채워져 보드 가득 유지", async () => {
     const r = makeFakeRenderer();
     const { context } = makeCtx(r);
-    const scene = new GameScene(context);
+    // RNG=0 → 리필은 1로 채움 (1 + floor(0*9) = 1).
+    const scene = new GameScene(context, () => 0);
     const map: MapData = {
       id: 1,
       name: "gravity-test",
@@ -183,29 +182,28 @@ describe("GameScene", () => {
     };
     await scene.enter({ map });
     scene.render();
-    // 맨 위 행 (1,9) 제거
     const layout = (scene as unknown as { boardRenderer: { getLayout(): any } }).boardRenderer.getLayout();
     const a = { x: layout.originX + layout.cellSize / 2, y: layout.originY + layout.cellSize / 2 };
     const b = { x: layout.originX + layout.cellSize + layout.cellSize / 2, y: layout.originY + layout.cellSize / 2 };
     scene.onPointerDown!(a.x, a.y);
     scene.onPointerMove!(b.x, b.y);
     scene.onPointerUp!(b.x, b.y);
-    // 중력 적용 후 맨 위 행은 비어있고 원래 row1, row2 가 아래로 내려와야 함
+    // 원본 row1/row2 는 유지, 맨 위는 리필(1)로 채워짐
     const board = (scene as unknown as { board: { snapshot(): number[][] } }).board;
     const snap = board.snapshot();
-    assertEqual(snap[0][0], 0);
-    assertEqual(snap[0][1], 0);
+    assertEqual(snap[0][0], 1);
+    assertEqual(snap[0][1], 1);
     assertEqual(snap[1][0], 2);
     assertEqual(snap[1][1], 8);
     assertEqual(snap[2][0], 3);
     assertEqual(snap[2][1], 7);
   });
 
-  test("유효 조합 소진 시 stuck reason으로 종료", async () => {
+  test("리필 후에도 유효 조합 소진 시 stuck reason으로 종료", async () => {
     const r = makeFakeRenderer();
     const { context, transitions } = makeCtx(r);
-    const scene = new GameScene(context);
-    // (3,7) 쌍 제거 후 남는 (1,1)은 합=2라 조합 없음
+    // RNG=0 → 리필 값이 모두 1. 2x2 보드에서 모두 1이면 합=10 조합 없음.
+    const scene = new GameScene(context, () => 0);
     await scene.enter({
       map: {
         id: 1,

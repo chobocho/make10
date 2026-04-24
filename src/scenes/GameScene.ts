@@ -44,6 +44,7 @@ export class GameScene implements Scene {
   private readonly context: SceneContext;
   private readonly boardRenderer: BoardRenderer;
   private readonly uiRenderer: UIRenderer;
+  private readonly randomFn: () => number;
 
   private map: MapData | null;
   private board: Board | null;
@@ -55,10 +56,11 @@ export class GameScene implements Scene {
   private ended: boolean;
   private pressedHintBtn: boolean;
 
-  constructor(context: SceneContext) {
+  constructor(context: SceneContext, randomFn: () => number = Math.random) {
     this.context = context;
     this.boardRenderer = new BoardRenderer(context.renderer);
     this.uiRenderer = new UIRenderer(context.renderer);
+    this.randomFn = randomFn;
     this.map = null;
     this.board = null;
     this.selector = null;
@@ -177,12 +179,13 @@ export class GameScene implements Scene {
     if (result.valid) {
       this.board.clearCells(result.positions);
       this.board.applyGravity();
+      this.board.refill(this.randomFn);
       this.hint?.clear();
       this.score += result.positions.length === 2 ? SCORE_PAIR : SCORE_TRIPLE;
       this.context.audio.play("remove");
-      if (this.board.isCleared()) {
-        this.endGame("cleared");
-      } else if (findValidCombination(this.board) === null) {
+      // 리필로 보드가 다시 가득 차므로 isCleared는 실질적으로 false.
+      // 리필 후에도 유효 조합이 없으면 매우 드물게 stuck.
+      if (findValidCombination(this.board) === null) {
         this.endGame("stuck");
       }
     } else if (result.positions.length >= 2) {

@@ -81,6 +81,26 @@ export class Board {
   }
 
   /**
+   * 리필 — 남아있는 빈 칸(0)을 1~9 임의 값으로 채운다.
+   * `applyGravity` 후 호출하면 각 열의 상단 빈 칸이 채워져, 시각적으로
+   * "위에서 새 블럭이 내려오는" 효과가 된다.
+   * @param randomFn 0~1 난수 팩토리(기본 `Math.random`). 테스트 주입 가능.
+   * @returns 새로 채워진 셀 개수
+   */
+  refill(randomFn: () => number = Math.random): number {
+    let filled = 0;
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        if (this.grid[r][c] === 0) {
+          this.grid[r][c] = 1 + Math.floor(randomFn() * 9);
+          filled++;
+        }
+      }
+    }
+    return filled;
+  }
+
+  /**
    * 중력 적용 — 각 열에서 위에 있던 비어있지 않은 셀이 아래의 빈 칸을 채우며 낙하한다.
    * (Bejeweled 스타일: 셀이 위에서 아래로 떨어진다.)
    * 상대적 순서는 유지된다. 외부 상태(선택/힌트)는 호출자가 재설정해야 한다.
