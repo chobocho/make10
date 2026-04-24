@@ -139,3 +139,11 @@
 - `src/main.ts`의 `MAX_MAP_ID` 를 10 → 100으로 상향.
 - `tests/mapLoader.test.ts` 전면 업데이트: 100개 맵 전부 스키마·유효 조합 존재·id 연속성·난이도 경향(후반 평균 시간 < 초반)을 검증. 누적 132/132 pass.
 - `./build.sh` 재실행하여 `release/data/` 에 100개 JSON 포함.
+
+## 2026-04-24 — 이슈 #18 통합 테스트 & 버그 수정
+
+- **버그 수정**: `GameScene`의 힌트 버튼이 `pointerdown` 단계에서 즉발(오탭 위험)하던 동작을 **press + release 인 바운스** 패턴으로 변경. `onPointerCancel`도 상태 초기화.
+- `tests/integration.test.ts` — Title → Game → Result 왕복 플로우 통합 테스트. 실제 `data/map001.json` · `map002.json` · `map100.json` 을 읽어 파싱/클리어/타임오버/retry/next 흐름을 검증.
+- `tests/gameScene.test.ts` 힌트 버튼 테스트 업데이트 — press-only / press-then-release-outside 케이스 추가.
+- `README.md` 재작성 — 게임 방법/지원 환경/실행·빌드·테스트 지침/디렉토리 구조/리소스 출처.
+- 최종 검증: `npx tsc --noEmit` 에러 0건, `npx ts-node tests/runner.ts` **136/136 pass**, `./build.sh` → `release/dist.js` 27.3kb.

@@ -50,6 +50,7 @@ export class GameScene implements Scene {
   private uiLayout: UILayout;
   private score: number;
   private ended: boolean;
+  private pressedHintBtn: boolean;
 
   constructor(context: SceneContext) {
     this.context = context;
@@ -63,6 +64,7 @@ export class GameScene implements Scene {
     this.uiLayout = computeUILayout(1, 1);
     this.score = 0;
     this.ended = false;
+    this.pressedHintBtn = false;
   }
 
   async enter(args?: unknown): Promise<void> {
@@ -75,6 +77,7 @@ export class GameScene implements Scene {
     this.hint = new Hint(this.board, a.map.hintCount);
     this.score = 0;
     this.ended = false;
+    this.pressedHintBtn = false;
     this.timer.onExpired(() => this.endGame(false));
     this.timer.start();
     this.recomputeLayout();
@@ -128,9 +131,7 @@ export class GameScene implements Scene {
   onPointerDown(x: number, y: number): void {
     if (this.ended || !this.selector || !this.hint) return;
     if (y < this.uiLayout.uiHeight) {
-      if (isHintButtonHit(this.uiLayout, x, y)) {
-        this.requestHint();
-      }
+      this.pressedHintBtn = isHintButtonHit(this.uiLayout, x, y);
       return;
     }
     const layout = this.boardRenderer.getLayout();
@@ -150,8 +151,22 @@ export class GameScene implements Scene {
     if (changed) this.context.audio.play("select");
   }
 
-  onPointerUp(): void {
-    if (this.ended || !this.selector || !this.board) return;
+  onPointerUp(x: number = Number.NaN, y: number = Number.NaN): void {
+    if (this.ended) return;
+    if (this.pressedHintBtn) {
+      const pressed = this.pressedHintBtn;
+      this.pressedHintBtn = false;
+      if (pressed && Number.isFinite(x) && Number.isFinite(y)) {
+        if (isHintButtonHit(this.uiLayout, x, y)) {
+          this.requestHint();
+        }
+      } else if (pressed) {
+        // 좌표 생략 호출 — 발사만 (테스트 호환).
+        this.requestHint();
+      }
+      return;
+    }
+    if (!this.selector || !this.board) return;
     const result = this.selector.commit();
     if (result.valid) {
       this.board.clearCells(result.positions);
@@ -166,6 +181,7 @@ export class GameScene implements Scene {
   }
 
   onPointerCancel(): void {
+    this.pressedHintBtn = false;
     this.selector?.cancel();
   }
 

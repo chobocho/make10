@@ -5,6 +5,9 @@ import {
   assertTrue,
   assertFalse,
 } from "./runner";
+
+// assertFalse는 아래에서 사용된다.
+void assertFalse;
 import { GameScene, GameResult } from "../src/scenes/GameScene";
 import type { SceneContext, SceneId } from "../src/scenes/Scene";
 import { CanvasRenderer } from "../src/renderer/CanvasRenderer";
@@ -127,16 +130,35 @@ describe("GameScene", () => {
     assertFalse(res.cleared);
   });
 
-  test("힌트 버튼 터치 시 힌트 재생 + 카운트 감소", async () => {
+  test("힌트 버튼 press + release 시에만 힌트 재생", async () => {
     const r = makeFakeRenderer();
     const { context, audioCalls } = makeCtx(r);
     const scene = new GameScene(context);
     await scene.enter({ map: tinyMap() });
-    // 힌트 버튼 위치: UI 상단 우측
     scene.render();
-    const layout = (scene as unknown as { uiLayout: { hintButton: { x: number; y: number; width: number; height: number } } }).uiLayout.hintButton;
-    scene.onPointerDown!(layout.x + layout.width / 2, layout.y + layout.height / 2);
+    const btn = (scene as unknown as {
+      uiLayout: { hintButton: { x: number; y: number; width: number; height: number } };
+    }).uiLayout.hintButton;
+    const cx = btn.x + btn.width / 2;
+    const cy = btn.y + btn.height / 2;
+    scene.onPointerDown!(cx, cy);
+    assertFalse(audioCalls.includes("hint"));
+    scene.onPointerUp!(cx, cy);
     assertTrue(audioCalls.includes("hint"));
+  });
+
+  test("힌트 버튼 press 후 밖에서 release → 힌트 미발사", async () => {
+    const r = makeFakeRenderer();
+    const { context, audioCalls } = makeCtx(r);
+    const scene = new GameScene(context);
+    await scene.enter({ map: tinyMap() });
+    scene.render();
+    const btn = (scene as unknown as {
+      uiLayout: { hintButton: { x: number; y: number; width: number; height: number } };
+    }).uiLayout.hintButton;
+    scene.onPointerDown!(btn.x + 1, btn.y + 1);
+    scene.onPointerUp!(-10, -10);
+    assertFalse(audioCalls.includes("hint"));
   });
 
   test("무효 선택 시 invalid 사운드", async () => {
