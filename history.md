@@ -50,3 +50,10 @@
 - `Hint.request()`: 유효 조합 없거나 횟수 소진 시 카운트 차감하지 않고 null 반환.
 - 하이라이트는 `HINT_HIGHLIGHT_MS=3000ms` 수명, `tick(deltaMs)`로 감소.
 - `tests/hint.test.ts` 13건 추가, 전체 pass (누적 64/64).
+
+## 2026-04-24 — 이슈 #07 CanvasRenderer 구현
+
+- `src/renderer/CanvasRenderer.ts` — HiDPI 대응. CSS 픽셀 좌표로 그리도록 `setTransform(dpr,0,0,dpr,0,0)` 적용. `attachToWindow`로 브라우저 크기 연동.
+- 구조 분리: 콜백(`onResize`) · 접근자(`getCtx`,`getCanvas`,`getSize`) · `clear([color])`.
+- 테스트는 fake canvas/ctx 모킹으로 DOM 없이 검증.
+- `tests/canvasRenderer.test.ts` 7건 추가, 전체 pass (누적 71/71).
