@@ -11,6 +11,8 @@ export interface MapData {
   readonly timeLimit: number;
   readonly hintCount: number;
   readonly targetScore: number;
+  /** 별 3개 단계 임계값. 엄격히 오름차순 [★1, ★2, ★3]. */
+  readonly starThresholds: readonly [number, number, number];
   readonly initialBoard: ReadonlyArray<ReadonlyArray<number>>;
 }
 
@@ -28,6 +30,12 @@ export function validateMap(input: unknown): input is MapData {
   if (!isPosInt(o.timeLimit) || (o.timeLimit as number) < 1) return false;
   if (!isPosInt(o.hintCount)) return false;
   if (!isPosInt(o.targetScore)) return false;
+  if (!Array.isArray(o.starThresholds) || o.starThresholds.length !== 3) return false;
+  for (const s of o.starThresholds) {
+    if (!Number.isInteger(s) || s < 1) return false;
+  }
+  const [s1, s2, s3] = o.starThresholds as number[];
+  if (!(s1 < s2 && s2 < s3)) return false;
   if (!Array.isArray(o.initialBoard)) return false;
   if (o.initialBoard.length !== (o.rows as number)) return false;
   for (const row of o.initialBoard) {

@@ -23,7 +23,7 @@ export class TitleScene implements Scene {
   private titleY: number;
   private loading: boolean;
   private pressedIndex: number;
-  private bestScores: Map<number, number>;
+  private bestStars: Map<number, number>;
 
   constructor(context: SceneContext) {
     this.context = context;
@@ -32,7 +32,7 @@ export class TitleScene implements Scene {
     this.titleY = 80;
     this.loading = false;
     this.pressedIndex = -1;
-    this.bestScores = new Map();
+    this.bestStars = new Map();
   }
 
   enter(): void {
@@ -47,9 +47,11 @@ export class TitleScene implements Scene {
   private async reloadProgress(): Promise<void> {
     try {
       const records = await this.context.saveManager.list();
-      this.bestScores = new Map(records.map((r) => [r.mapId, r.score]));
+      this.bestStars = new Map(
+        records.map((r) => [r.mapId, typeof r.stars === "number" ? r.stars : 0]),
+      );
     } catch {
-      this.bestScores = new Map();
+      this.bestStars = new Map();
     }
   }
 
@@ -84,8 +86,8 @@ export class TitleScene implements Scene {
     const labelFont = Math.round(this.titleFontPx * 0.55);
     for (let i = 0; i < this.buttons.length; i++) {
       const mapId = i + 1;
-      const best = this.bestScores.get(mapId);
-      const cleared = best !== undefined;
+      const stars = this.bestStars.get(mapId) ?? 0;
+      const cleared = stars > 0;
       const b = this.buttons[i];
       ctx.fillStyle =
         i === this.pressedIndex
@@ -108,7 +110,9 @@ export class TitleScene implements Scene {
         const subFont = Math.round(b.height * 0.18);
         ctx.font = `${subFont}px -apple-system, "Segoe UI Emoji", sans-serif`;
         ctx.fillStyle = COLOR_STAR;
-        ctx.fillText(`★ ${best}`, b.x + b.width / 2, b.y + b.height * 0.78);
+        const starsDisplay =
+          "★".repeat(stars) + "☆".repeat(3 - stars);
+        ctx.fillText(starsDisplay, b.x + b.width / 2, b.y + b.height * 0.78);
       }
     }
 

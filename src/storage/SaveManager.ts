@@ -10,6 +10,8 @@ export interface ProgressRecord {
   readonly mapId: number;
   readonly boardState: ReadonlyArray<ReadonlyArray<number>>;
   readonly score: number;
+  /** 이 기록 시점의 별점 (0~3). */
+  readonly stars?: number;
   readonly timeLeft: number;
   readonly timestamp: number;
 }

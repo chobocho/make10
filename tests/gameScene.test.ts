@@ -81,6 +81,7 @@ function tinyMap(): MapData {
     timeLimit: 5,
     hintCount: 1,
     targetScore: 0,
+    starThresholds: [50, 150, 300],
     initialBoard: [[4, 6]],
   };
 }
@@ -89,17 +90,82 @@ describe("GameScene", () => {
   test("enter: 기본 상태 초기화 (점수 0, 미종료)", async () => {
     const r = makeFakeRenderer();
     const { context } = makeCtx(r);
-    const scene = new GameScene(context);
+    const scene = new GameScene(context, Math.random, 0);
     await scene.enter({ map: tinyMap() });
     assertEqual(scene._getScore(), 0);
     assertFalse(scene._isEnded());
+  });
+
+  test("인트로 오버레이: 기본은 표시됨, 탭하면 해제되고 타이머 시작", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 2500);
+    await scene.enter({ map: tinyMap() });
+    assertTrue(scene._isInIntro());
+    // 탭해서 인트로 해제
+    scene.onPointerDown!(100, 100);
+    assertFalse(scene._isInIntro());
+    // 이 시점에서 timer.running === true 여야 함
+    const timer = (scene as unknown as { timer: { isRunning(): boolean } }).timer;
+    assertTrue(timer.isRunning());
+  });
+
+  test("인트로 중 update: 시간 경과 시 자동 해제, 타이머 시작", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 1000);
+    await scene.enter({ map: tinyMap() });
+    scene.update(500);
+    assertTrue(scene._isInIntro());
+    scene.update(600);
+    assertFalse(scene._isInIntro());
+    const timer = (scene as unknown as { timer: { isRunning(): boolean } }).timer;
+    assertTrue(timer.isRunning());
+  });
+
+  test("인트로 중 보드 선택 불가", async () => {
+    const r = makeFakeRenderer();
+    const { context, audioCalls } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 5000);
+    await scene.enter({ map: tinyMap() });
+    scene.render();
+    const layout = (scene as unknown as { boardRenderer: { getLayout(): any } }).boardRenderer.getLayout();
+    const bx = layout.originX + layout.cellSize / 2;
+    const by = layout.originY + layout.cellSize / 2;
+    // 인트로 상태에서 down → 인트로만 해제, select 사운드 없음
+    scene.onPointerDown!(bx, by);
+    assertFalse(audioCalls.includes("select"));
+  });
+
+  test("종료 시 GameResult 에 stars + starThresholds 포함", async () => {
+    const r = makeFakeRenderer();
+    const { context, transitions } = makeCtx(r);
+    const scene = new GameScene(context, () => 0, 0);
+    await scene.enter({
+      map: {
+        ...tinyMap(),
+        starThresholds: [50, 150, 300],
+      },
+    });
+    scene.render();
+    const layout = (scene as unknown as { boardRenderer: { getLayout(): any } }).boardRenderer.getLayout();
+    const a = { x: layout.originX + layout.cellSize / 2, y: layout.originY + layout.cellSize / 2 };
+    const b = { x: layout.originX + layout.cellSize + layout.cellSize / 2, y: layout.originY + layout.cellSize / 2 };
+    scene.onPointerDown!(a.x, a.y);
+    scene.onPointerMove!(b.x, b.y);
+    scene.onPointerUp!(b.x, b.y);
+    // 2x1 + 모두 1 리필 → stuck, 점수 100 → ★★ (≥150 아님, ≥50 맞음 → ★1)
+    const res = transitions[transitions.length - 1].args as GameResult;
+    assertEqual(res.stars, 1);
+    assertTrue(res.cleared);
+    assertEqual(res.starThresholds[0], 50);
   });
 
   test("합 10 드래그 → remove 사운드 + 점수 +100 + 보드 리필로 가득 유지", async () => {
     const r = makeFakeRenderer();
     const { context, audioCalls } = makeCtx(r);
     // RNG=0 → 리필 값은 모두 1 (2x1 맵에서는 1+1=2라 유효 조합 없음 → stuck)
-    const scene = new GameScene(context, () => 0);
+    const scene = new GameScene(context, () => 0, 0);
     await scene.enter({ map: tinyMap() });
     scene.render();
     const layout = (scene as unknown as { boardRenderer: { getLayout(): any } }).boardRenderer.getLayout();
@@ -120,7 +186,7 @@ describe("GameScene", () => {
   test("타이머 만료 → gameover 전환", async () => {
     const r = makeFakeRenderer();
     const { context, audioCalls, transitions } = makeCtx(r);
-    const scene = new GameScene(context);
+    const scene = new GameScene(context, Math.random, 0);
     await scene.enter({ map: { ...tinyMap(), timeLimit: 1 } });
     scene.update(2000);
     assertTrue(scene._isEnded());
@@ -133,7 +199,7 @@ describe("GameScene", () => {
   test("힌트 버튼 press + release 시에만 힌트 재생", async () => {
     const r = makeFakeRenderer();
     const { context, audioCalls } = makeCtx(r);
-    const scene = new GameScene(context);
+    const scene = new GameScene(context, Math.random, 0);
     await scene.enter({ map: tinyMap() });
     scene.render();
     const btn = (scene as unknown as {
@@ -150,7 +216,7 @@ describe("GameScene", () => {
   test("힌트 버튼 press 후 밖에서 release → 힌트 미발사", async () => {
     const r = makeFakeRenderer();
     const { context, audioCalls } = makeCtx(r);
-    const scene = new GameScene(context);
+    const scene = new GameScene(context, Math.random, 0);
     await scene.enter({ map: tinyMap() });
     scene.render();
     const btn = (scene as unknown as {
@@ -165,7 +231,7 @@ describe("GameScene", () => {
     const r = makeFakeRenderer();
     const { context } = makeCtx(r);
     // RNG=0 → 리필은 1로 채움 (1 + floor(0*9) = 1).
-    const scene = new GameScene(context, () => 0);
+    const scene = new GameScene(context, () => 0, 0);
     const map: MapData = {
       id: 1,
       name: "gravity-test",
@@ -174,6 +240,7 @@ describe("GameScene", () => {
       timeLimit: 60,
       hintCount: 0,
       targetScore: 0,
+      starThresholds: [100, 500, 1000],
       initialBoard: [
         [1, 9],
         [2, 8],
@@ -203,7 +270,7 @@ describe("GameScene", () => {
     const r = makeFakeRenderer();
     const { context, transitions } = makeCtx(r);
     // RNG=0 → 리필 값이 모두 1. 2x2 보드에서 모두 1이면 합=10 조합 없음.
-    const scene = new GameScene(context, () => 0);
+    const scene = new GameScene(context, () => 0, 0);
     await scene.enter({
       map: {
         id: 1,
@@ -213,6 +280,8 @@ describe("GameScene", () => {
         timeLimit: 60,
         hintCount: 0,
         targetScore: 0,
+        // ★1 임계값을 한 번의 쌍 제거 점수(100)보다 높게 → stuck 시 cleared=false 예측 가능.
+        starThresholds: [200, 500, 1000],
         initialBoard: [
           [3, 7],
           [1, 1],
@@ -235,7 +304,7 @@ describe("GameScene", () => {
   test("무효 선택 시 invalid 사운드", async () => {
     const r = makeFakeRenderer();
     const { context, audioCalls } = makeCtx(r);
-    const scene = new GameScene(context);
+    const scene = new GameScene(context, Math.random, 0);
     await scene.enter({
       map: {
         ...tinyMap(),

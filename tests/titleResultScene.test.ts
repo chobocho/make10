@@ -61,6 +61,7 @@ function tinyMap(id = 1): MapData {
     timeLimit: 10,
     hintCount: 1,
     targetScore: 0,
+    starThresholds: [50, 150, 300],
     initialBoard: [[4, 6]],
   };
 }
@@ -147,7 +148,10 @@ describe("ResultScene", () => {
       mapName: `m${id}`,
       cleared,
       score: 500,
+      stars: cleared ? 1 : 0,
       timeLeft: 30,
+      reason: cleared ? "cleared" : "timeup",
+      starThresholds: [100, 1000, 2000],
     };
   }
 
@@ -237,10 +241,28 @@ describe("ResultScene", () => {
 });
 
 describe("TitleScene: 저장된 기록 반영", () => {
-  test("enter 시 saveManager.list 로딩 → bestScores 채워짐", async () => {
+  test("enter 시 saveManager.list 로딩 → bestStars 채워짐", async () => {
     const { ctx } = makeCtx();
     await ctx.saveManager.save({
       mapId: 2,
+      boardState: [],
+      score: 500,
+      stars: 2,
+      timeLeft: 30,
+      timestamp: 0,
+    });
+    const scene = new TitleScene(ctx);
+    scene.enter();
+    await Promise.resolve();
+    await Promise.resolve();
+    const best = (scene as unknown as { bestStars: Map<number, number> }).bestStars;
+    assertEqual(best.get(2), 2);
+  });
+
+  test("stars 필드 없는 레코드는 0으로 취급", async () => {
+    const { ctx } = makeCtx();
+    await ctx.saveManager.save({
+      mapId: 5,
       boardState: [],
       score: 500,
       timeLeft: 30,
@@ -248,11 +270,10 @@ describe("TitleScene: 저장된 기록 반영", () => {
     });
     const scene = new TitleScene(ctx);
     scene.enter();
-    // 비동기 reload 대기
     await Promise.resolve();
     await Promise.resolve();
-    const best = (scene as unknown as { bestScores: Map<number, number> }).bestScores;
-    assertEqual(best.get(2), 500);
+    const best = (scene as unknown as { bestStars: Map<number, number> }).bestStars;
+    assertEqual(best.get(5), 0);
   });
 
   test("제목 화면 재진입 시 기록 재로드", async () => {
@@ -260,19 +281,18 @@ describe("TitleScene: 저장된 기록 반영", () => {
     const scene = new TitleScene(ctx);
     scene.enter();
     await Promise.resolve();
-    // 이후 저장 발생
     await ctx.saveManager.save({
       mapId: 3,
       boardState: [],
       score: 700,
+      stars: 3,
       timeLeft: 20,
       timestamp: 0,
     });
-    // 다시 enter → 재로드
     scene.enter();
     await Promise.resolve();
     await Promise.resolve();
-    const best = (scene as unknown as { bestScores: Map<number, number> }).bestScores;
-    assertEqual(best.get(3), 700);
+    const best = (scene as unknown as { bestStars: Map<number, number> }).bestStars;
+    assertEqual(best.get(3), 3);
   });
 });

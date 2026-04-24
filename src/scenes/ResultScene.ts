@@ -47,12 +47,13 @@ export class ResultScene implements Scene {
     this.pressed = null;
     this.recomputeLayout();
     this.context.renderer.onResize(() => this.recomputeLayout());
-    // 클리어 기록은 최고 점수만 유지 (fire-and-forget). 실패해도 게임은 계속.
+    // ★1 이상 달성 시 기록 저장 (fire-and-forget). 기존보다 높은 점수만 유지.
     if (this.result && this.result.cleared) {
       void this.context.saveManager.saveBest({
         mapId: this.result.mapId,
         boardState: [],
         score: this.result.score,
+        stars: this.result.stars,
         timeLeft: this.result.timeLeft,
         timestamp: Date.now(),
       });
@@ -94,17 +95,48 @@ export class ResultScene implements Scene {
           : "⏱ 시간 초과";
     ctx.fillText(headline, width / 2, height * 0.22);
 
+    // 획득 별 3개 단계 표시 — ★★★ / ★★☆ 등.
+    if (res) {
+      const starFontPx = Math.round(this.headlineFontPx * 0.9);
+      ctx.fillStyle = "#ebcb8b";
+      ctx.font = `${starFontPx}px -apple-system, "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
+      const starsDisplay =
+        "★".repeat(res.stars) + "☆".repeat(3 - res.stars);
+      ctx.fillText(starsDisplay, width / 2, height * 0.36);
+    }
+
     ctx.fillStyle = COLOR_TEXT;
     ctx.font = `${this.bodyFontPx}px -apple-system, sans-serif`;
     const lines: string[] = res
       ? [
-          `맵: ${res.mapName}`,
+          `${res.mapName}`,
           `점수: ${res.score}`,
-          `남은 시간: ${res.timeLeft}초`,
         ]
       : [];
-    for (let i = 0; i < lines.length; i++) {
-      ctx.fillText(lines[i], width / 2, height * 0.4 + i * (this.bodyFontPx * 1.5));
+    let lineY = height * 0.5;
+    for (const line of lines) {
+      ctx.fillText(line, width / 2, lineY);
+      lineY += this.bodyFontPx * 1.4;
+    }
+
+    // 각 별 단계 임계값 대비 달성 여부.
+    if (res) {
+      const thresholdFont = Math.round(this.bodyFontPx * 0.85);
+      ctx.font = `${thresholdFont}px -apple-system, "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
+      const [s1, s2, s3] = res.starThresholds;
+      const tiers: Array<readonly [string, number]> = [
+        ["★", s1],
+        ["★★", s2],
+        ["★★★", s3],
+      ];
+      lineY += this.bodyFontPx * 0.4;
+      for (const [label, need] of tiers) {
+        const achieved = res.score >= need;
+        ctx.fillStyle = achieved ? "#a3be8c" : "#5d6872";
+        const prefix = achieved ? "✓" : "·";
+        ctx.fillText(`${prefix} ${label}  ${need}`, width / 2, lineY);
+        lineY += thresholdFont * 1.4;
+      }
     }
 
     const nextAvailable = this.hasNext();

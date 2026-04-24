@@ -34,12 +34,30 @@ describe("MapLoader — validation", () => {
       timeLimit: 30,
       hintCount: 1,
       targetScore: 0,
+      starThresholds: [100, 500, 1000],
       initialBoard: [
         [1, 9],
         [2, 8],
       ],
     };
     assertTrue(validateMap(m));
+  });
+
+  test("validateMap: starThresholds 누락/오름차순 위반 거부", () => {
+    const base = {
+      id: 1,
+      name: "t",
+      cols: 2,
+      rows: 1,
+      timeLimit: 10,
+      hintCount: 0,
+      targetScore: 0,
+      initialBoard: [[4, 6]],
+    };
+    assertFalse(validateMap(base));
+    assertFalse(validateMap({ ...base, starThresholds: [100, 100, 200] }));
+    assertFalse(validateMap({ ...base, starThresholds: [200, 100, 300] }));
+    assertFalse(validateMap({ ...base, starThresholds: [100, 200] }));
   });
 
   test("validateMap: 값 범위 위반", () => {

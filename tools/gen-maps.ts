@@ -11,6 +11,7 @@ import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { Board } from "../src/game/Board";
 import { findValidCombination } from "../src/game/Hint";
+import { defaultStarThresholds, StarThresholds } from "../src/game/Scoring";
 
 interface MapSpec {
   id: number;
@@ -20,6 +21,7 @@ interface MapSpec {
   timeLimit: number;
   hintCount: number;
   targetScore: number;
+  starThresholds: StarThresholds;
   initialBoard: number[][];
 }
 
@@ -125,6 +127,11 @@ export function generateMap(id: number): MapSpec {
   const preset = presetFor(id);
   const rand = mulberry32(preset.id * 2654435761);
   const initialBoard = genBoardWithInitialCombo(preset.cols, preset.rows, rand);
+  const starThresholds = defaultStarThresholds(
+    preset.cols,
+    preset.rows,
+    preset.timeLimit,
+  );
   return {
     id: preset.id,
     name: preset.name,
@@ -133,6 +140,7 @@ export function generateMap(id: number): MapSpec {
     timeLimit: preset.timeLimit,
     hintCount: preset.hintCount,
     targetScore: 0,
+    starThresholds,
     initialBoard,
   };
 }

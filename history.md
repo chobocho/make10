@@ -201,3 +201,31 @@
   - `gameScene.test.ts` — 매치 후 보드 가득 유지, refill 값 검증, stuck 은 RNG=0 주입으로 강제.
   - `integration.test.ts` — "클리어" 플로우 → "매치 후 타이머 만료 → result → retry" 로 교체. stuck 플로우는 `new GameScene(ctx, () => 0)` 로 RNG 주입.
 - 최종: `npx tsc --noEmit` 에러 0, 테스트 **154/154 pass**, 번들 재생성.
+
+## 2026-04-24 — 별 3개 단계(★★★) 도입
+
+**규칙**: 맵별 3개 임계값(`starThresholds`)으로 성공 여부와 별점 결정. 시작 시 인트로 오버레이로 기준 점수 안내.
+
+- `src/game/Scoring.ts` — `computeStars`, `starsString`, `defaultStarThresholds` 순수 함수.
+- `MapData.starThresholds: [s1,s2,s3]` 추가 (오름차순), `validateMap` 에서 엄격 검증.
+- `tools/gen-maps.ts` — 각 맵에 `defaultStarThresholds(cols,rows,timeLimit)` 로 자동 계산 + 100단위 반올림.
+- `data/map001~100.json` 재생성 (starThresholds 필드 추가).
+- `GameResult` — `stars`, `starThresholds` 필드 추가. `cleared = stars >= 1`.
+- `GameScene`:
+  - 생성자 3번째 인자 `introDurationMs` (기본 2500ms, 테스트 주입 시 0).
+  - 인트로 오버레이: 맵 이름 + ★/★★/★★★ 임계값 + 탭/시간 경과 안내. 인트로 중 타이머는 정지, 보드 입력 무시 (탭은 인트로 해제 전용).
+  - HUD 중앙 점수 옆 `★★☆` 실시간 표시.
+  - 종료 시 stars/임계값을 GameResult에 포함.
+- `ResultScene`:
+  - 헤드라인 아래에 획득 별(`★★☆`) 크게 표시.
+  - 각 별 단계 임계값과 달성 여부(✓/·) 나열.
+  - 점수 저장 시 `stars` 필드 포함.
+- `TitleScene`:
+  - 각 맵 버튼 하단에 최고 별점(`★★☆`) 표시. `saveManager.list()` 에서 `stars` 필드 사용.
+- `ProgressRecord.stars` 필드 추가 (선택 필드, 과거 레코드 호환).
+- 테스트 (168/168 pass):
+  - `scoring.test.ts` 8건 — 컷오프/표기/기본 임계값.
+  - `gameScene.test.ts` — 인트로 표시/탭-해제/자동-해제 3건, 인트로 중 보드 입력 차단, stars/임계값 포함 결과.
+  - `mapLoader.test.ts` — starThresholds 누락/오름차순 위반 거부 케이스.
+  - 기존 픽스처 전부에 `starThresholds` 추가, 일부 임계값을 테스트 의도에 맞게 조정.
+- CLAUDE.md §2-7 / README 업데이트.

@@ -6,6 +6,11 @@
   "timeLimit": 90,
   "hintCount": 2,
   "targetScore": 0,
+  "starThresholds": [
+    2200,
+    5200,
+    8600
+  ],
   "initialBoard": [
     [
       2,

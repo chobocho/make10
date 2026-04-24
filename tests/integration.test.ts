@@ -78,6 +78,7 @@ function pairTiledFixture(id = 1, rows = 3, cols = 2): MapData {
     timeLimit: 30,
     hintCount: 1,
     targetScore: 0,
+    starThresholds: [100, 500, 1000],
     initialBoard,
   };
 }
@@ -92,6 +93,7 @@ function slowFixture(id = 2): MapData {
     timeLimit: 5,
     hintCount: 0,
     targetScore: 0,
+    starThresholds: [100, 500, 1000],
     initialBoard: [
       [3, 7],
       [4, 6],
@@ -173,7 +175,7 @@ describe("Integration: Title → Game → Result", () => {
   test("맵1 선택 → 매치 반복(보드 리필) → 타이머 만료 → result → retry", async () => {
     const { ctx, fsm, audioCalls } = buildContext();
     fsm.register("title", new TitleScene(ctx));
-    fsm.register("game", new GameScene(ctx));
+    fsm.register("game", new GameScene(ctx, Math.random, 0));
     fsm.register("result", new ResultScene(ctx));
 
     await fsm.start("title");
@@ -201,12 +203,17 @@ describe("Integration: Title → Game → Result", () => {
     const snap = (gameScene as unknown as { board: { snapshot(): number[][] } }).board.snapshot();
     for (const row of snap) for (const v of row) assertTrue(v !== 0);
 
-    // 타이머 강제 만료 → result 전환
+    // 타이머 강제 만료 → result 전환. 점수 100 < ★1(500) → cleared=false.
+    // (fixture starThresholds=[100,500,1000], pair 1회=100점 → 0★ 또는 1★ 가능 — 정확한 수는
+    //  매치 횟수에 따라 다름. 여기서는 result 전환만 확정 검증.)
     fsm.update(300_000);
     await Promise.resolve();
     await Promise.resolve();
     assertEqual(fsm.getCurrentId(), "result");
-    assertTrue(audioCalls.includes("gameover"));
+    assertTrue(
+      audioCalls.includes("gameover") || audioCalls.includes("clear"),
+      "종료 사운드(gameover/clear) 중 하나가 재생되어야 함",
+    );
 
     // retry
     const btns = computeResultButtonsLayout(size.width, size.height);
@@ -220,7 +227,7 @@ describe("Integration: Title → Game → Result", () => {
   test("타이머 만료 → reason=timeup 결과에서 next 가능", async () => {
     const { ctx, fsm } = buildContext((id) => slowFixture(id));
     fsm.register("title", new TitleScene(ctx));
-    fsm.register("game", new GameScene(ctx));
+    fsm.register("game", new GameScene(ctx, Math.random, 0));
     fsm.register("result", new ResultScene(ctx));
     await fsm.start("game", { map: slowFixture(2) });
     fsm.update(300_000);
@@ -250,14 +257,15 @@ describe("Integration: Title → Game → Result", () => {
       timeLimit: 60,
       hintCount: 0,
       targetScore: 0,
+      starThresholds: [200, 500, 1000],
       initialBoard: [
         [3, 7],
         [1, 1],
       ],
     };
     const { ctx, fsm } = buildContext(() => stuckMap);
-    // RNG=0 → 리필이 모두 1 → 2x2 전체 1 → stuck
-    fsm.register("game", new GameScene(ctx, () => 0));
+    // RNG=0 → 리필이 모두 1 → 2x2 전체 1 → stuck. introDurationMs=0으로 즉시 시작.
+    fsm.register("game", new GameScene(ctx, () => 0, 0));
     fsm.register("result", new ResultScene(ctx));
     await fsm.start("game", { map: stuckMap });
     const scene = fsm.getCurrent() as GameScene;

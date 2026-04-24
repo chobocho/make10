@@ -53,6 +53,8 @@ export interface HUDState {
   /** 남은 시간 비율 (0..1, 1=가득). 타이머 무지개 바에 사용. */
   readonly timeProgress: number;
   readonly score: number;
+  /** 현재까지 획득한 별 수 (0~3). */
+  readonly stars?: number;
   readonly hintsLeft: number;
   readonly highlighting?: boolean;
 }
@@ -118,7 +120,9 @@ export class UIRenderer {
 
     ctx.fillStyle = COLOR_TEXT;
     ctx.textAlign = "center";
-    ctx.fillText(`🏆 ${state.score}`, width / 2, layout.hudY + hudH / 2);
+    const stars = typeof state.stars === "number" ? Math.max(0, Math.min(3, state.stars)) : 0;
+    const starsStr = "★".repeat(stars) + "☆".repeat(3 - stars);
+    ctx.fillText(`🏆 ${state.score}  ${starsStr}`, width / 2, layout.hudY + hudH / 2);
 
     const b = layout.hintButton;
     const active = state.highlighting === true;
