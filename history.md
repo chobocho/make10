@@ -42,3 +42,11 @@
 - 실제 시계 대신 델타 주입 방식 → 테스트/일시정지 충실도 확보.
 - 만료 시 `onExpire` 콜백 1회 호출, 만료 후 `start`/`resume` 무시.
 - `tests/timer.test.ts` 11건 추가, 전체 pass (누적 51/51).
+
+## 2026-04-24 — 이슈 #06 Hint 모듈 구현
+
+- `src/game/Hint.ts` — 유효 조합 탐색 + 힌트 횟수/하이라이트 수명 관리.
+- `findValidCombination`: 2셀(가로/세로 인접) 우선 탐색 후 3셀 경로(4방향) 탐색, 합 10 검사. ㄱ자 꺾인 경로도 탐지.
+- `Hint.request()`: 유효 조합 없거나 횟수 소진 시 카운트 차감하지 않고 null 반환.
+- 하이라이트는 `HINT_HIGHLIGHT_MS=3000ms` 수명, `tick(deltaMs)`로 감소.
+- `tests/hint.test.ts` 13건 추가, 전체 pass (누적 64/64).
