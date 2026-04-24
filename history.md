@@ -65,3 +65,11 @@
 - 변환 유틸: `cellRect`, `hitTestCell` — 스크린 ↔ 셀 좌표.
 - 키캡 이모지(1️⃣~9️⃣) 사용, 선택 셀 간 경로 라인 표시. 유효/무효 선택을 색상으로 구분.
 - `tests/boardRenderer.test.ts` 8건 추가, 전체 pass (누적 79/79).
+
+## 2026-04-24 — 이슈 #09 PointerInput 구현
+
+- `src/input/PointerInput.ts` — PointerEvents API 기반 통합 입력 (마우스/터치/펜).
+- 활성 포인터 1개만 추적(멀티터치 방지), `setPointerCapture`로 드래그 이탈 방지.
+- 좌표는 대상의 `getBoundingClientRect` 기준 CSS 픽셀 로컬 좌표로 변환.
+- fake target으로 DOM 없이 down/move/up, 2번째 포인터 무시, cancel 동작 검증.
+- `tests/pointerInput.test.ts` 5건 추가, 전체 pass (누적 84/84).

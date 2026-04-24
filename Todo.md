@@ -21,7 +21,7 @@
 - [x] #06 Hint 모듈 구현 — 유효 조합 탐색 알고리즘 + 테스트
 - [x] #07 CanvasRenderer 구현 — HiDPI 지원, devicePixelRatio 스케일링
 - [x] #08 BoardRenderer 구현 — 셀 이모지 렌더링, 선택/하이라이트 상태
-- [ ] #09 PointerInput 구현 — 마우스+터치 통합 드래그 이벤트
+- [x] #09 PointerInput 구현 — 마우스+터치 통합 드래그 이벤트
 - [ ] #10 AudioManager 구현 — Web Audio API, 삭제 효과음 base64 내장
 - [ ] #11 SaveManager 구현 — IndexedDB CRUD, 오류 시 폴백
 - [ ] #12 맵 JSON 데이터 생성 — map001~map010 (우선 10개)
@@ -44,3 +44,4 @@
 - [x] #06 Hint 모듈 구현 (2026-04-24)
 - [x] #07 CanvasRenderer 구현 (2026-04-24)
 - [x] #08 BoardRenderer 구현 (2026-04-24)
+- [x] #09 PointerInput 구현 (2026-04-24)
