@@ -25,7 +25,7 @@
 - [x] #10 AudioManager 구현 — Web Audio API, 삭제 효과음 base64 내장
 - [x] #11 SaveManager 구현 — IndexedDB CRUD, 오류 시 폴백
 - [x] #12 맵 JSON 데이터 생성 — map001~map010 (우선 10개)
-- [ ] #13 GameScene 통합 — Board + Renderer + Input + Timer + Hint 연결
+- [x] #13 GameScene 통합 — Board + Renderer + Input + Timer + Hint 연결
 - [ ] #14 TitleScene / ResultScene 구현
 - [ ] #15 FSM (씬 전환 상태머신) 구현
 - [ ] #16 빌드 스크립트 — build.sh, build.bat (CP949), release 폴더 정리
@@ -48,3 +48,4 @@
 - [x] #10 AudioManager 구현 (2026-04-24)
 - [x] #11 SaveManager 구현 (2026-04-24)
 - [x] #12 맵 JSON 데이터 생성 map001~map010 + MapLoader (2026-04-24)
+- [x] #13 GameScene 통합 + Scene 인터페이스 + UIRenderer (2026-04-24)

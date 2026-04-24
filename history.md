@@ -97,3 +97,14 @@
 - `data/map001.json` ~ `data/map010.json` 생성(4x5 ~ 6x9). 모든 맵에서 `findValidCombination` 이 비-null 을 반환함을 테스트로 보장.
 - `src/data/MapLoader.ts` — `validateMap` 엄격 스키마 검증 + `parseMapJson` + `loadMap(mapId, fetcher?)`. 테스트/번들 양쪽에서 fetch DI.
 - `tests/mapLoader.test.ts` 20건 추가(유효성 6 + 실제 맵 10 + 속성 2 + id 순서 1 + map001 합10 검증 1), 전체 pass (누적 118/118).
+
+## 2026-04-24 — 이슈 #13 GameScene 통합
+
+- `src/scenes/Scene.ts` — 공통 Scene 인터페이스 + SceneContext(renderer/audio/saveManager/transition).
+- `src/renderer/UIRenderer.ts` — HUD(타이머/점수/힌트 버튼) + `computeUILayout` 비율 기반 레이아웃 + `isHintButtonHit`. 모든 좌표를 뷰포트 비율에서 clamp(60~110px 등)로 산출 — 하드코딩 금지 규칙 준수.
+- `src/scenes/GameScene.ts` — Board/Selector/Timer/Hint + BoardRenderer/UIRenderer/입력을 묶음. 규칙:
+  - 2셀 제거 +100, 3셀 +250, 클리어 시 남은 초 × 10 보너스.
+  - 유효 합 10 → `remove` 사운드 & 제거, 무효 → `invalid`, 타이머 만료 → `gameover`, 전부 비면 `clear`.
+  - 완료 시 `result` 씬으로 `GameResult` 전달.
+  - 리사이즈 대응: `renderer.onResize`로 보드/UI 레이아웃 재계산.
+- `tests/uiRenderer.test.ts` 4건 + `tests/gameScene.test.ts` 5건 추가, 전체 pass (누적 127/127).
