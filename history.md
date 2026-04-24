@@ -125,3 +125,9 @@
 - `index.html` — bundle 포맷(IIFE)에 맞춰 `<script type="module">` → `defer` 로드로 수정.
 - 첫 번들 빌드: `npx esbuild src/main.ts --bundle --outfile=dist/dist.js --target=es2020 --format=iife` → 48.9kb.
 - `tests/fsm.test.ts` 5건 추가, 전체 pass (누적 141/141).
+
+## 2026-04-24 — 이슈 #16 빌드 스크립트
+
+- `build.sh` — `esbuild --minify` 로 번들링 후 `release/` 초기화·재생성. `sed`로 `index.html`의 `dist/dist.js` → `dist.js` 치환하여 평탄화(§3-2 준수).
+- `build.bat` — Windows용. CP949/UTF-8 인코딩 이슈 회피를 위해 메시지는 영문 ASCII 유지. 경로 치환은 PowerShell 사용.
+- 실행 테스트: `./build.sh` → `release/` 에 `index.html`(dist.js 참조), `dist.js`(27kb 압축), `data/map001~010.json` 정상 생성.
