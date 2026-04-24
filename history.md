@@ -35,3 +35,10 @@
 - 상수 `MIN_SELECTION=2`, `MAX_SELECTION=3`, `TARGET_SUM=10` export.
 - `commit()`에서 결과(positions/sum/valid) 반환 후 상태 초기화.
 - `tests/selector.test.ts` 18건 추가, 전체 pass (누적 40/40).
+
+## 2026-04-24 — 이슈 #05 Timer 모듈 구현
+
+- `src/game/Timer.ts` — 밀리초 누적 기반 카운트다운. `tick(deltaMs)`로 진행, `pause`/`resume`/`reset` 지원.
+- 실제 시계 대신 델타 주입 방식 → 테스트/일시정지 충실도 확보.
+- 만료 시 `onExpire` 콜백 1회 호출, 만료 후 `start`/`resume` 무시.
+- `tests/timer.test.ts` 11건 추가, 전체 pass (누적 51/51).
