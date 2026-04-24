@@ -20,6 +20,9 @@ export interface UILayout {
   readonly timerBar: UIButtonRect;
   /** 메인 HUD 시작 y (= 타이머 바 아래). */
   readonly hudY: number;
+  /** 좌측 일시정지 버튼. */
+  readonly pauseButton: UIButtonRect;
+  /** 우측 힌트 버튼. */
   readonly hintButton: UIButtonRect;
 }
 
@@ -31,22 +34,35 @@ export function computeUILayout(viewWidth: number, viewHeight: number): UILayout
   const barHeight = Math.round(clamp(viewHeight * 0.014, 6, 14));
   const hudHeight = Math.round(clamp(viewHeight * 0.1, 60, 110));
   const uiHeight = barHeight + hudHeight;
-  const btnW = Math.round(clamp(viewWidth * 0.25, 96, 160));
+  const hintW = Math.round(clamp(viewWidth * 0.22, 84, 150));
+  const pauseW = Math.round(clamp(viewWidth * 0.14, 56, 100));
   const btnH = Math.round(hudHeight * 0.72);
   const margin = Math.round(hudHeight * 0.18);
-  const btnX = viewWidth - btnW - margin;
   const btnY = barHeight + Math.round((hudHeight - btnH) / 2);
   return {
     uiHeight,
     timerBar: { x: 0, y: 0, width: viewWidth, height: barHeight },
     hudY: barHeight,
-    hintButton: { x: btnX, y: btnY, width: btnW, height: btnH },
+    pauseButton: { x: margin, y: btnY, width: pauseW, height: btnH },
+    hintButton: {
+      x: viewWidth - hintW - margin,
+      y: btnY,
+      width: hintW,
+      height: btnH,
+    },
   };
 }
 
-export function isHintButtonHit(layout: UILayout, x: number, y: number): boolean {
-  const b = layout.hintButton;
+function rectHit(b: UIButtonRect, x: number, y: number): boolean {
   return x >= b.x && x < b.x + b.width && y >= b.y && y < b.y + b.height;
+}
+
+export function isHintButtonHit(layout: UILayout, x: number, y: number): boolean {
+  return rectHit(layout.hintButton, x, y);
+}
+
+export function isPauseButtonHit(layout: UILayout, x: number, y: number): boolean {
+  return rectHit(layout.pauseButton, x, y);
 }
 
 export interface HUDState {
@@ -57,6 +73,8 @@ export interface HUDState {
   readonly stars?: number;
   readonly hintsLeft: number;
   readonly highlighting?: boolean;
+  /** 일시정지 상태 — 버튼 아이콘 토글용. */
+  readonly paused?: boolean;
 }
 
 const COLOR_HUD_BG = "#1b222b";
@@ -118,12 +136,25 @@ export class UIRenderer {
     ctx.font = `${fontPx}px -apple-system, "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
     ctx.textBaseline = "middle";
 
+    // 일시정지 버튼 (좌측)
+    const pauseB = layout.pauseButton;
+    ctx.fillStyle = state.paused === true ? COLOR_BTN_ACTIVE : COLOR_BTN;
+    ctx.fillRect(pauseB.x, pauseB.y, pauseB.width, pauseB.height);
     ctx.fillStyle = COLOR_TEXT;
     ctx.textAlign = "center";
+    ctx.fillText(
+      state.paused === true ? "▶" : "⏸",
+      pauseB.x + pauseB.width / 2,
+      pauseB.y + pauseB.height / 2,
+    );
+
+    // 점수 + 별 (중앙)
+    ctx.fillStyle = COLOR_TEXT;
     const stars = typeof state.stars === "number" ? Math.max(0, Math.min(3, state.stars)) : 0;
     const starsStr = "★".repeat(stars) + "☆".repeat(3 - stars);
     ctx.fillText(`🏆 ${state.score}  ${starsStr}`, width / 2, layout.hudY + hudH / 2);
 
+    // 힌트 버튼 (우측)
     const b = layout.hintButton;
     const active = state.highlighting === true;
     ctx.fillStyle =

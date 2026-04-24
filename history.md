@@ -229,3 +229,16 @@
   - `mapLoader.test.ts` — starThresholds 누락/오름차순 위반 거부 케이스.
   - 기존 픽스처 전부에 `starThresholds` 추가, 일부 임계값을 테스트 의도에 맞게 조정.
 - CLAUDE.md §2-7 / README 업데이트.
+
+## 2026-04-24 — 일시정지/재개 기능
+
+- HUD 레이아웃에 `pauseButton` 필드 추가 (좌측, 힌트 버튼과 대칭). `computeUILayout` 이 너비 기준 clamp 으로 양쪽 버튼 크기 산정.
+- `UIRenderer.drawHUD` — 좌측 `⏸`/`▶` 아이콘 토글, `HUDState.paused` 로 배경색 강조.
+- `GameScene`:
+  - `pauseGame()` / `resumeGame()` / `isPaused()` API 노출. 인트로 중·종료 후에는 일시정지 요청 무시.
+  - pause 시 타이머 정지 + 현재 선택/힌트 하이라이트 초기화.
+  - `update()` — 일시정지면 timer/hint tick 건너뜀.
+  - `onPointerDown` — `⏸` 버튼 tap → pause, 일시정지 중 보드 탭 → resume, 일시정지 중에는 힌트 버튼 무시.
+  - `onPointerUp` — 일시정지 버튼은 press+release 인 바운스 처리.
+  - pause 오버레이 렌더링 — "⏸ 일시정지" 헤드라인 + 안내 문구.
+- 테스트 5건 추가 (pause 토글 / tick 무시 / 보드 탭 재개 / 힌트 차단 / 인트로 중 요청 무시). 누적 **173/173 pass**.

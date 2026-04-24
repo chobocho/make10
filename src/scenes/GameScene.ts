@@ -19,6 +19,7 @@ import {
   UIRenderer,
   computeUILayout,
   isHintButtonHit,
+  isPauseButtonHit,
   UILayout,
 } from "../renderer/UIRenderer";
 
@@ -60,7 +61,9 @@ export class GameScene implements Scene {
   private score: number;
   private ended: boolean;
   private pressedHintBtn: boolean;
+  private pressedPauseBtn: boolean;
   private introMsLeft: number;
+  private paused: boolean;
 
   constructor(
     context: SceneContext,
@@ -81,7 +84,9 @@ export class GameScene implements Scene {
     this.score = 0;
     this.ended = false;
     this.pressedHintBtn = false;
+    this.pressedPauseBtn = false;
     this.introMsLeft = 0;
+    this.paused = false;
   }
 
   async enter(args?: unknown): Promise<void> {
@@ -95,6 +100,8 @@ export class GameScene implements Scene {
     this.score = 0;
     this.ended = false;
     this.pressedHintBtn = false;
+    this.pressedPauseBtn = false;
+    this.paused = false;
     this.introMsLeft = this.introDurationMs;
     this.timer.onExpired(() => this.endGame("timeup"));
     // 인트로 오버레이가 없으면 즉시 시작, 있으면 인트로가 끝난 뒤 start.
@@ -114,8 +121,30 @@ export class GameScene implements Scene {
     }
   }
 
+  pauseGame(): void {
+    if (this.paused || this.ended || this.isInIntro()) return;
+    this.paused = true;
+    this.timer?.pause();
+    this.selector?.cancel();
+    this.hint?.clear();
+    this.pressedHintBtn = false;
+  }
+
+  resumeGame(): void {
+    if (!this.paused || this.ended) return;
+    this.paused = false;
+    this.timer?.resume();
+  }
+
+  isPaused(): boolean {
+    return this.paused;
+  }
+
   exit(): void {
     this.timer?.pause();
+    this.paused = false;
+    this.pressedHintBtn = false;
+    this.pressedPauseBtn = false;
   }
 
   private recomputeLayout(): void {
@@ -142,6 +171,7 @@ export class GameScene implements Scene {
       }
       return;
     }
+    if (this.paused) return;
     this.timer?.tick(deltaMs);
     this.hint?.tick(deltaMs);
   }
@@ -168,8 +198,32 @@ export class GameScene implements Scene {
       stars,
       hintsLeft: this.hint.getRemaining(),
       highlighting: this.hint.isHighlighting(),
+      paused: this.paused,
     });
     if (this.isInIntro()) this.drawIntroOverlay();
+    else if (this.paused) this.drawPauseOverlay();
+  }
+
+  private drawPauseOverlay(): void {
+    const ctx = this.context.renderer.getCtx();
+    const { width, height } = this.context.renderer.getSize();
+    ctx.fillStyle = "rgba(16, 24, 32, 0.82)";
+    ctx.fillRect(0, this.uiLayout.uiHeight, width, height - this.uiLayout.uiHeight);
+
+    const titleFont = Math.round(Math.min(width, height) * 0.08);
+    const bodyFont = Math.round(Math.min(width, height) * 0.035);
+    const cx = width / 2;
+    const cy = (height + this.uiLayout.uiHeight) / 2;
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#e0e6ee";
+    ctx.font = `bold ${titleFont}px -apple-system, "Segoe UI Emoji", sans-serif`;
+    ctx.fillText("⏸ 일시정지", cx, cy - titleFont * 0.3);
+
+    ctx.fillStyle = "#a3b3c2";
+    ctx.font = `${bodyFont}px -apple-system, sans-serif`;
+    ctx.fillText("▶ 버튼을 누르거나 화면을 탭하세요", cx, cy + titleFont * 0.8);
   }
 
   private drawIntroOverlay(): void {
@@ -226,7 +280,18 @@ export class GameScene implements Scene {
       return;
     }
     if (y < this.uiLayout.uiHeight) {
-      this.pressedHintBtn = isHintButtonHit(this.uiLayout, x, y);
+      // HUD 영역 — 일시정지/힌트 버튼 press 시작.
+      if (isPauseButtonHit(this.uiLayout, x, y)) {
+        this.pressedPauseBtn = true;
+      } else if (!this.paused && isHintButtonHit(this.uiLayout, x, y)) {
+        this.pressedHintBtn = true;
+      }
+      return;
+    }
+    if (this.paused) {
+      // 보드 영역 탭 → 재개.
+      this.context.audio.play("button");
+      this.resumeGame();
       return;
     }
     const layout = this.boardRenderer.getLayout();
@@ -238,7 +303,15 @@ export class GameScene implements Scene {
   }
 
   onPointerMove(x: number, y: number): void {
-    if (this.ended || this.isInIntro() || !this.selector || !this.selector.isActive()) return;
+    if (
+      this.ended ||
+      this.isInIntro() ||
+      this.paused ||
+      !this.selector ||
+      !this.selector.isActive()
+    ) {
+      return;
+    }
     const layout = this.boardRenderer.getLayout();
     const p = hitTestCell(layout, x, y);
     if (!p) return;
@@ -248,6 +321,21 @@ export class GameScene implements Scene {
 
   onPointerUp(x: number = Number.NaN, y: number = Number.NaN): void {
     if (this.ended) return;
+
+    // 일시정지 버튼 press → release 인 바운스
+    if (this.pressedPauseBtn) {
+      this.pressedPauseBtn = false;
+      const hit = !Number.isFinite(x) || !Number.isFinite(y)
+        ? true
+        : isPauseButtonHit(this.uiLayout, x, y);
+      if (hit) {
+        this.context.audio.play("button");
+        if (this.paused) this.resumeGame();
+        else this.pauseGame();
+      }
+      return;
+    }
+
     if (this.pressedHintBtn) {
       const pressed = this.pressedHintBtn;
       this.pressedHintBtn = false;
@@ -256,11 +344,12 @@ export class GameScene implements Scene {
           this.requestHint();
         }
       } else if (pressed) {
-        // 좌표 생략 호출 — 발사만 (테스트 호환).
         this.requestHint();
       }
       return;
     }
+
+    if (this.paused) return;
     if (!this.selector || !this.board) return;
     const result = this.selector.commit();
     if (result.valid) {
@@ -270,8 +359,6 @@ export class GameScene implements Scene {
       this.hint?.clear();
       this.score += result.positions.length === 2 ? SCORE_PAIR : SCORE_TRIPLE;
       this.context.audio.play("remove");
-      // 리필로 보드가 다시 가득 차므로 isCleared는 실질적으로 false.
-      // 리필 후에도 유효 조합이 없으면 매우 드물게 stuck.
       if (findValidCombination(this.board) === null) {
         this.endGame("stuck");
       }
@@ -282,6 +369,7 @@ export class GameScene implements Scene {
 
   onPointerCancel(): void {
     this.pressedHintBtn = false;
+    this.pressedPauseBtn = false;
     this.selector?.cancel();
   }
 

@@ -196,6 +196,87 @@ describe("GameScene", () => {
     assertFalse(res.cleared);
   });
 
+  test("일시정지 버튼: press+release 로 pause, 다시 눌러 resume", async () => {
+    const r = makeFakeRenderer();
+    const { context, audioCalls } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 0);
+    await scene.enter({ map: tinyMap() });
+    scene.render();
+    const pauseBtn = (scene as unknown as {
+      uiLayout: { pauseButton: { x: number; y: number; width: number; height: number } };
+    }).uiLayout.pauseButton;
+    const cx = pauseBtn.x + pauseBtn.width / 2;
+    const cy = pauseBtn.y + pauseBtn.height / 2;
+    scene.onPointerDown!(cx, cy);
+    scene.onPointerUp!(cx, cy);
+    assertTrue(scene.isPaused());
+    assertTrue(audioCalls.includes("button"));
+    // 다시 누르면 resume
+    scene.onPointerDown!(cx, cy);
+    scene.onPointerUp!(cx, cy);
+    assertFalse(scene.isPaused());
+  });
+
+  test("일시정지 중: timer.tick / hint.tick 무시", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 0);
+    await scene.enter({ map: { ...tinyMap(), timeLimit: 10 } });
+    scene.render();
+    scene.pauseGame();
+    const timer = (scene as unknown as { timer: { getRemainingMs(): number } }).timer;
+    const before = timer.getRemainingMs();
+    scene.update(2000);
+    assertEqual(timer.getRemainingMs(), before);
+  });
+
+  test("일시정지 중 보드 탭 → 재개", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 0);
+    await scene.enter({ map: tinyMap() });
+    scene.render();
+    scene.pauseGame();
+    assertTrue(scene.isPaused());
+    // 보드 영역 탭
+    const layout = (scene as unknown as { boardRenderer: { getLayout(): any } }).boardRenderer.getLayout();
+    scene.onPointerDown!(
+      layout.originX + layout.cellSize / 2,
+      layout.originY + layout.cellSize / 2,
+    );
+    assertFalse(scene.isPaused());
+  });
+
+  test("일시정지 중에는 힌트 버튼 입력 무시", async () => {
+    const r = makeFakeRenderer();
+    const { context, audioCalls } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 0);
+    await scene.enter({ map: tinyMap() });
+    scene.render();
+    scene.pauseGame();
+    const hintBtn = (scene as unknown as {
+      uiLayout: { hintButton: { x: number; y: number; width: number; height: number } };
+    }).uiLayout.hintButton;
+    scene.onPointerDown!(
+      hintBtn.x + hintBtn.width / 2,
+      hintBtn.y + hintBtn.height / 2,
+    );
+    scene.onPointerUp!(
+      hintBtn.x + hintBtn.width / 2,
+      hintBtn.y + hintBtn.height / 2,
+    );
+    assertFalse(audioCalls.includes("hint"));
+  });
+
+  test("인트로 중에는 pauseGame 요청 무시", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 5000);
+    await scene.enter({ map: tinyMap() });
+    scene.pauseGame();
+    assertFalse(scene.isPaused());
+  });
+
   test("힌트 버튼 press + release 시에만 힌트 재생", async () => {
     const r = makeFakeRenderer();
     const { context, audioCalls } = makeCtx(r);
