@@ -1,0 +1,49 @@
+@startuml sequence-session
+title Session Persistence — Auto-save on Hide, Resume on Re-open
+skinparam responseMessageBelowArrow true
+actor User
+participant Browser
+participant "GameApp" as App
+participant "SaveManager" as SM
+participant "IndexedDB\n(session store)" as IDB
+participant "FSM" as FSM
+participant "GameScene" as GS
+
+== App boot ==
+User -> Browser : open page
+Browser -> App : DOMContentLoaded
+App -> SM : listSessions()
+SM -> IDB : transaction(readonly)
+IDB --> SM : [records sorted by timestamp desc]
+SM --> App : sessions
+alt session exists
+  App -> SM : (latest session)
+  App -> FSM : start("game", { map, resumeFrom })
+  FSM -> GS : enter({ map, resumeFrom })
+  GS -> GS : setupGame(resumeFrom)\n  - Board(boardState, boardLives)\n  - Timer.setElapsedMs(...)\n  - Hint(hintsLeft)\n  - score = saved
+  GS -> GS : pauseGame()  // shows Resume / Restart / Main menu
+else no session
+  App -> FSM : start("title")
+end
+
+== Mid-game: user switches tab ==
+User -> Browser : switch app / lock screen
+Browser -> GS : visibilitychange (document.hidden=true)
+GS -> GS : pauseGame()
+GS -> SM : saveSession({ mapId, boardState,\nboardLives, score, timeLeft, hintsLeft })
+SM -> IDB : put(record)
+
+== User returns ==
+User -> Browser : focus tab
+note right of GS : pause overlay still visible\n(Resume / Restart / Main)
+
+== User taps Resume ==
+User -> GS : tap "Resume"
+GS -> GS : resumeGame()
+note right of GS : session record kept;\ndeleted on endGame / restart / Main
+
+== Game ends (timeup / stuck / cleared) ==
+GS -> SM : clearSession(mapId)
+SM -> IDB : delete(mapId)
+GS -> FSM : transition("result", result)
+@enduml

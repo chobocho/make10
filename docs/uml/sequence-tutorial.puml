@@ -1,0 +1,67 @@
+@startuml sequence-tutorial
+title Interactive Tutorial — First Visit to Map 1
+skinparam responseMessageBelowArrow true
+actor User
+participant "GameScene" as GS
+participant "TutorialOverlay" as Tut
+participant "Mini Board\n(Selector + Board)" as Mini
+participant "SaveManager" as SM
+participant "IndexedDB\n(meta store)" as Meta
+
+== Enter map 1 ==
+User -> GS : pick map 1
+GS -> GS : setupGame() (main board ready)
+GS -> SM : isTutorialDone()
+SM -> Meta : get("tutorial_done")
+Meta --> SM : null (or true)
+SM --> GS : false
+GS -> Tut : start()
+Tut -> Tut : phase = 1 (text: "Make 10")
+
+== Phase 1 (text) tap ==
+User -> GS : tap
+GS -> Tut : onPointerUp(x, y) -> "continue"
+Tut -> Tut : advance() -> phase 2
+Tut -> Mini : new Board([[3, 7]])\nnew Selector(board)
+
+== Phase 2 (practice 2-cell) ==
+User -> GS : drag 3 -> 7
+GS -> Tut : onPointerDown / Move / Up
+Tut -> Mini : Selector.begin / extend / commit
+alt valid (sum==10)
+  Tut -> Tut : feedback="success" (800ms)
+  note right of Tut : "Nice!" check mark
+else invalid (>=2 cells)
+  Tut -> Tut : feedback="retry" (1000ms)
+  note right of Tut : "Try again"
+end
+
+== After 800ms (success) ==
+GS -> Tut : update(deltaMs) -> "continue"
+Tut -> Tut : advance() -> phase 3 (practice [[1,2,7]])
+
+== Phase 3 (3-cell straight) ==
+User -> GS : drag 1 -> 2 -> 7
+GS -> Tut : onPointerUp -> "continue" (success)
+Tut -> Tut : advance() -> phase 4 (practice [[5,3,1],[4,2,6]])
+
+== Phase 4 (3-cell L-shape / corner path) ==
+User -> GS : drag 5 -> 3 -> 2 (corner)
+note right of Mini : board has no straight\n2-cell or 3-cell sum=10;\nonly bent paths work
+GS -> Tut : onPointerUp -> "continue" (success)
+Tut -> Tut : advance() -> phase 5 (text: stars/score)
+
+== Phase 5 (final text) tap ==
+User -> GS : tap
+GS -> Tut : onPointerUp -> "completed"
+GS -> SM : markTutorialDone()
+SM -> Meta : set("tutorial_done", true)
+
+== Skip at any phase ==
+User -> GS : tap "Skip" button
+GS -> Tut : onPointerUp -> "skipped"
+GS -> SM : markTutorialDone()
+SM -> Meta : set("tutorial_done", true)
+
+note over GS, Meta : Subsequent visits to map 1\nskip tutorial entirely.
+@enduml

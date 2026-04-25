@@ -1,0 +1,57 @@
+@startuml sequence-match
+title Match Flow — Drag to Sum=10 → Damage / Gravity / Refill
+skinparam responseMessageBelowArrow true
+actor User
+participant "PointerInput" as PI
+participant "GameApp\n(loop)" as App
+participant "FSM" as FSM
+participant "GameScene" as GS
+participant "Selector" as Sel
+participant "Board" as Board
+participant "Hint" as Hint
+participant "AudioManager" as Audio
+
+User -> PI : touchstart / mousedown
+PI -> App : onDown(x, y)
+App -> FSM : onPointerDown(x, y)
+FSM -> GS : onPointerDown(x, y)
+GS -> Sel : begin(col, row)
+Sel --> GS
+GS -> Audio : play("select")
+
+User -> PI : drag (move)
+PI -> App : onMove(x, y)
+App -> FSM : onPointerMove(x, y)
+FSM -> GS : onPointerMove(x, y)
+GS -> Sel : extend(col, row)
+note right of Sel : adjacent only,\nlength <= 3
+
+User -> PI : touchend / mouseup
+PI -> App : onUp(x, y)
+App -> FSM : onPointerUp(x, y)
+FSM -> GS : onPointerUp(x, y)
+GS -> Sel : commit() : { positions, sum, valid }
+
+alt valid match (sum == 10)
+  GS -> Board : applyMatch(positions)
+  note right of Board
+    2-cell + both lives>=2:
+      damage = min(A.lives, B.lives)
+    else: 1 damage per cell
+    cells with lives -> 0 are removed
+  end note
+  Board --> GS : destroyedCount
+  GS -> Board : applyGravity()
+  GS -> Board : refill(rng)
+  GS -> Hint : clear()
+  GS -> Audio : play("remove")
+  GS -> GS : score += +100 / +250
+  GS -> Board : findValidCombination()
+  alt no valid combination
+    GS -> GS : endGame("stuck")
+    GS -> FSM : transition("result", result)
+  end
+else invalid (>=2 cells, sum != 10)
+  GS -> Audio : play("invalid")
+end
+@enduml

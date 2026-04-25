@@ -1,0 +1,141 @@
+@startuml class-architecture
+title Make10 — Class Architecture
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+hide empty members
+top to bottom direction
+
+package "core" {
+  class GameApp {
+    +start()
+    +stop()
+    -tryResumeSession()
+    -loop()
+  }
+  class FSM {
+    +register(id, scene)
+    +transition(id, args)
+    +update(dt)
+    +render()
+  }
+  GameApp *-- FSM
+}
+
+package "scenes" {
+  interface Scene
+  class TitleScene
+  class GameScene {
+    -score: number
+    +pauseGame()
+    +resumeGame()
+    +restartMap()
+  }
+  class ResultScene
+  class TutorialOverlay {
+    -phase: number
+    +start()
+    +update(dt): TutorialResult
+    +onPointerUp(x,y): TutorialResult
+  }
+  Scene <|.. TitleScene
+  Scene <|.. GameScene
+  Scene <|.. ResultScene
+  GameScene *-- TutorialOverlay
+}
+FSM o-- Scene
+
+package "game logic (pure)" {
+  class Board {
+    -grid: number[][]
+    -lives: number[][]
+    +applyMatch(positions): number
+    +applyGravity()
+    +refill(rng)
+    +snapshot()
+    +livesSnapshot()
+  }
+  class Selector {
+    +begin(c,r) / extend(c,r)
+    +commit(): SelectionResult
+  }
+  class Timer {
+    +start() / pause() / resume()
+    +tick(dt)
+    +setElapsedMs(ms)
+  }
+  class Hint {
+    +request()
+    +tick(dt)
+  }
+  Selector --> Board
+  Hint --> Board
+}
+
+package "renderer" {
+  class CanvasRenderer
+  class BoardRenderer {
+    +setLayout(l)
+    +draw(board, options)
+  }
+  class UIRenderer {
+    +drawHUD(layout, state)
+  }
+  BoardRenderer --> CanvasRenderer
+  UIRenderer --> CanvasRenderer
+}
+
+package "io" {
+  class PointerInput
+  class AudioManager
+}
+
+package "data" {
+  class MapData <<value>>
+  class MapLoader {
+    +loadMap(id)
+    +validateMap(input)
+  }
+}
+
+package "storage (IndexedDB v3)" {
+  class SaveManager {
+    +saveBest / load / list
+    +saveSession / loadSession / clearSession
+    +markTutorialDone / isTutorialDone
+  }
+  interface ProgressStore
+  interface MetaStore
+  class ProgressRecord <<value>> {
+    +mapId, score, stars
+    +boardState, boardLives?
+    +timeLeft, hintsLeft?
+    +timestamp
+  }
+  SaveManager --> ProgressStore
+  SaveManager --> MetaStore
+  ProgressStore ..> ProgressRecord
+}
+
+' GameApp wires the top-level dependencies
+GameApp *-- CanvasRenderer
+GameApp *-- AudioManager
+GameApp *-- SaveManager
+GameApp *-- PointerInput
+
+' GameScene composes game logic + renderers
+GameScene *-- Board
+GameScene *-- Selector
+GameScene *-- Timer
+GameScene *-- Hint
+GameScene *-- BoardRenderer
+GameScene *-- UIRenderer
+GameScene ..> SaveManager : sessions / meta
+GameScene ..> AudioManager
+GameScene ..> MapData
+
+TutorialOverlay *-- BoardRenderer
+TutorialOverlay ..> Board : owns mini-board
+
+TitleScene ..> SaveManager : list best stars
+ResultScene ..> SaveManager : saveBest
+@enduml

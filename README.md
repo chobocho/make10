@@ -120,6 +120,34 @@ npx ts-node tools/gen-maps.ts 1 100   # map001 ~ map100 재생성
 - 이모지: 시스템 이모지 폰트 (Apple Color Emoji / Segoe UI Emoji 등). 외부 자산 없음.
 - 오디오: Web Audio API `OscillatorNode` 합성. 효과음 파일 없음.
 
+## Architecture
+
+PlantUML 소스는 [`docs/uml/`](./docs/uml/) 에 있고, 아래 PNG는 `plantuml -tpng docs/uml/*.puml` 로 재생성합니다.
+
+### Class diagram
+
+전체 모듈/클래스 관계 — `core` → `scenes` → `game logic` / `renderer` / `storage` 의존 흐름.
+
+![Class architecture](./docs/uml/class-architecture.png)
+
+### Sequence: match flow
+
+드래그 → 합 10 판정 → `applyMatch` (멀티라이프 데미지 분기) → 중력 → 리필 → stuck 판정.
+
+![Match sequence](./docs/uml/sequence-match.png)
+
+### Sequence: session persistence
+
+탭 전환 시 `visibilitychange` → 세션 자동 저장. 부팅 시 최신 세션 발견하면 곧장 일시정지된 GameScene 으로 진입.
+
+![Session sequence](./docs/uml/sequence-session.png)
+
+### Sequence: tutorial flow
+
+1판 첫 진입 시 5단계 튜토리얼(텍스트 → 2셀 실습 → 3셀 직선 → 3셀 ㄱ자 → 텍스트). 종료/스킵 시 `meta` 스토어에 영속 마킹 → 재진입 시 미노출.
+
+![Tutorial sequence](./docs/uml/sequence-tutorial.png)
+
 ## 디렉토리
 
 ```
@@ -135,6 +163,7 @@ make10/
 │   ├── data/              # MapLoader
 │   └── storage/           # SaveManager (IndexedDB: progress / session / meta)
 ├── data/                  # map001~map100.json
+├── docs/uml/              # PlantUML 소스 + 생성된 PNG
 ├── tests/                 # 단위 + 통합 테스트
 ├── tools/                 # gen-maps.ts 등 개발 스크립트
 ├── build.sh / build.bat   # 릴리스 빌드
