@@ -261,6 +261,27 @@
     - 가시 영역 밖 버튼은 컬링으로 생략.
 - 테스트 4건 추가 (100 맵 시 maxScrollY>0, 드래그 스크롤로 탭 취소, 미세 이동은 탭 유지, 스크롤 후 탭 정확히 히트). 누적 **177/177 pass**.
 
+## 2026-04-25 — 인터랙티브 튜토리얼 (실습 단계 도입)
+
+**변경**: 텍스트 3슬라이드였던 튜토리얼을 4단계 인터랙티브로 업그레이드.
+
+- **단계 구성**:
+  1. 텍스트 — 🎯 합 10 만들기 (목표 안내, 탭 진행)
+  2. **실습** — `[[3, 7]]` 미니 보드. 사용자가 직접 드래그해 합 10 매치
+  3. **실습** — `[[1, 2, 7]]` 3셀 매치
+  4. 텍스트 — ⭐ 점수와 별 (+100/+250/★1 클리어, 탭으로 시작)
+- **피드백**:
+  - 정답 매치 → ✓ "잘했어요!" 800ms 표시 후 자동 다음 단계
+  - 합≠10인 2~3셀 선택 → "다시 시도해보세요" 1000ms 표시 후 같은 단계 유지
+  - 1셀만 탭 후 떼는 등 미선택은 무시
+- **건너뛰기**: 우상단 버튼은 모든 단계에서 즉시 종료 + `markTutorialDone` 호출.
+- **모듈 분리**: `src/scenes/TutorialOverlay.ts` 신규 — 자체 미니 Board/Selector + BoardRenderer 인스턴스 보유. GameScene 은 위임만(`update`/`render`/`onPointer*` 모두 라우팅, 반환값 `'completed'|'skipped'|'continue'` 로 종료 시점 통보).
+- **GameScene 변경**: `tutorial: TutorialOverlay` 단일 필드로 단순화. 기존 `tutorialActive`/`tutorialSlide`/`pressedTutorialSkip`/`tutorialSkipBtn` 4개 필드 제거. `recomputeLayout` 시 튜토리얼 미니 보드도 재계산.
+- **테스트 (255/255 pass)**:
+  - 기존 튜토리얼 9건 갱신 (slide → phase 용어, phase kind 검증).
+  - 신규: phase 1→2 전환 + 미니 보드 레이아웃 / phase 2 정답 드래그 → 자동 phase 3 / 1+2+7 3셀 매치 → 종료 / 실습 단계 건너뛰기.
+  - 테스트 접근자: `_getTutorialPhase` / `_getTutorialPhaseKind` / `_getTutorialFeedback` / `_getTutorialBoardLayout` 신규.
+
 ## 2026-04-25 — 1판 튜토리얼 모드 + 메타 영속 저장
 
 **요청**: 첫 맵에서 게임 방법을 안내하는 튜토리얼이 노출되어야 하고, 한 번 보면 DB에 기록해 다시 안 보여야 한다.

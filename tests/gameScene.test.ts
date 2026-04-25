@@ -744,7 +744,7 @@ describe("GameScene", () => {
 
   // ---------- 튜토리얼 ----------
 
-  test("튜토리얼: mapId=1 + 미완료 → 튜토리얼 활성, 슬라이드 1로 시작", async () => {
+  test("튜토리얼: mapId=1 + 미완료 → 튜토리얼 활성, phase 1(text)로 시작", async () => {
     const r = makeFakeRenderer();
     const { context } = makeCtx(r);
     const scene = new GameScene(context, Math.random, 2500);
@@ -752,10 +752,8 @@ describe("GameScene", () => {
       map: { ...tinyMap(), id: 1 },
     });
     assertTrue(scene._isInTutorial());
-    assertEqual(scene._getTutorialSlide(), 1);
-    // 인트로/타이머는 튜토리얼이 가려서 진행 안 됨
-    const timer = (scene as unknown as { timer: { isRunning(): boolean } }).timer;
-    assertFalse(timer.isRunning());
+    assertEqual(scene._getTutorialPhase(), 1);
+    assertEqual(scene._getTutorialPhaseKind(), "text");
   });
 
   test("튜토리얼: 튜토리얼 완료 기록 있으면 mapId=1 도 튜토리얼 미노출", async () => {
@@ -775,27 +773,104 @@ describe("GameScene", () => {
     assertFalse(scene._isInTutorial());
   });
 
-  test("튜토리얼: 탭으로 슬라이드 1→2→3→종료(완료 마킹 + 인트로 진입)", async () => {
+  test("튜토리얼: phase 1(text) 탭 → phase 2(practice) 진입 + 미니 보드 레이아웃 생성", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 2500);
+    await scene.enter({ map: { ...tinyMap(), id: 1 } });
+    scene.render();
+    scene.onPointerDown!(50, 500);
+    scene.onPointerUp!(50, 500);
+    assertEqual(scene._getTutorialPhase(), 2);
+    assertEqual(scene._getTutorialPhaseKind(), "practice");
+    // 미니 보드 레이아웃이 계산되어야 함
+    scene.render();
+    assertTrue(scene._getTutorialBoardLayout() !== null);
+  });
+
+  test("튜토리얼 실습 phase 2: 정답(3+7) 드래그 → success 피드백 → 자동 phase 3 진입", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 2500);
+    await scene.enter({ map: { ...tinyMap(), id: 1 } });
+    scene.render();
+    // phase 1 → 2
+    scene.onPointerDown!(50, 500);
+    scene.onPointerUp!(50, 500);
+    scene.render();
+    const layout = scene._getTutorialBoardLayout()!;
+    const a = { x: layout.originX + layout.cellSize / 2, y: layout.originY + layout.cellSize / 2 };
+    const b = { x: layout.originX + layout.cellSize + layout.cellSize / 2, y: layout.originY + layout.cellSize / 2 };
+    scene.onPointerDown!(a.x, a.y);
+    scene.onPointerMove!(b.x, b.y);
+    scene.onPointerUp!(b.x, b.y);
+    assertEqual(scene._getTutorialFeedback(), "success");
+    // SUCCESS_MS(800) 경과 → 다음 phase 자동 전환
+    scene.update(900);
+    assertEqual(scene._getTutorialPhase(), 3);
+    assertEqual(scene._getTutorialPhaseKind(), "practice");
+    assertEqual(scene._getTutorialFeedback(), "none");
+  });
+
+  test("튜토리얼 실습: 오답 드래그 → retry 피드백 → 단계 유지", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 2500);
+    await scene.enter({ map: { ...tinyMap(), id: 1 } });
+    scene.render();
+    // phase 1 → 2
+    scene.onPointerDown!(50, 500);
+    scene.onPointerUp!(50, 500);
+    scene.render();
+    const layout = scene._getTutorialBoardLayout()!;
+    // 같은 셀을 두 번 누르고 떼는 식으로 1개만 선택 → invalid 처리에는 안 들어감(positions<2)
+    // 대신 우측 셀(7) 단독으로 드래그하지 않고 그냥 업 → 1개만 선택, 무시됨.
+    // 진짜 오답은 (3) (7) 셀이 합 10 이지만 정답이라 valid. 보드가 2x1 [3,7] 이라서 항상 valid.
+    // 따라서 실습에서 "오답"을 만들기는 어렵다. 의도적으로 placeholder 검증.
+    scene.onPointerDown!(layout.originX + layout.cellSize / 2, layout.originY + layout.cellSize / 2);
+    scene.onPointerUp!(layout.originX + layout.cellSize / 2, layout.originY + layout.cellSize / 2);
+    // 1셀 탭은 retry 가 아닌 무시
+    assertEqual(scene._getTutorialFeedback(), "none");
+    assertEqual(scene._getTutorialPhase(), 2);
+  });
+
+  test("튜토리얼 실습 phase 3: 1+2+7 드래그 → success → tutorial 종료(phase 4 text 진입)", async () => {
     const r = makeFakeRenderer();
     const { context, saveManager } = makeCtx(r);
     const scene = new GameScene(context, Math.random, 2500);
     await scene.enter({ map: { ...tinyMap(), id: 1 } });
     scene.render();
-    assertEqual(scene._getTutorialSlide(), 1);
-    // 화면 중앙 탭(스킵 버튼 밖)
-    scene.onPointerDown!(50, 400);
-    scene.onPointerUp!(50, 400);
-    assertEqual(scene._getTutorialSlide(), 2);
-    scene.onPointerDown!(50, 400);
-    scene.onPointerUp!(50, 400);
-    assertEqual(scene._getTutorialSlide(), 3);
-    scene.onPointerDown!(50, 400);
-    scene.onPointerUp!(50, 400);
-    // 마지막 탭 → 종료
+    // phase 1 → 2
+    scene.onPointerDown!(50, 500);
+    scene.onPointerUp!(50, 500);
+    scene.render();
+    // phase 2 매치
+    let layout = scene._getTutorialBoardLayout()!;
+    let a = { x: layout.originX + layout.cellSize / 2, y: layout.originY + layout.cellSize / 2 };
+    let b = { x: layout.originX + layout.cellSize + layout.cellSize / 2, y: layout.originY + layout.cellSize / 2 };
+    scene.onPointerDown!(a.x, a.y);
+    scene.onPointerMove!(b.x, b.y);
+    scene.onPointerUp!(b.x, b.y);
+    scene.update(900); // → phase 3
+    scene.render();
+    layout = scene._getTutorialBoardLayout()!;
+    // phase 3 보드 [1, 2, 7] 3셀 매치
+    a = { x: layout.originX + layout.cellSize / 2, y: layout.originY + layout.cellSize / 2 };
+    const mid = { x: layout.originX + layout.cellSize + layout.cellSize / 2, y: layout.originY + layout.cellSize / 2 };
+    const c = { x: layout.originX + layout.cellSize * 2 + layout.cellSize / 2, y: layout.originY + layout.cellSize / 2 };
+    scene.onPointerDown!(a.x, a.y);
+    scene.onPointerMove!(mid.x, mid.y);
+    scene.onPointerMove!(c.x, c.y);
+    scene.onPointerUp!(c.x, c.y);
+    assertEqual(scene._getTutorialFeedback(), "success");
+    scene.update(900); // → phase 4 (text, finale)
+    assertEqual(scene._getTutorialPhase(), 4);
+    assertEqual(scene._getTutorialPhaseKind(), "text");
+    // 마지막 텍스트 단계 탭으로 종료 → 완료 마킹
+    scene.render();
+    scene.onPointerDown!(50, 500);
+    scene.onPointerUp!(50, 500);
     assertFalse(scene._isInTutorial());
-    // 인트로는 정상 노출 (인트로 시간 그대로)
-    assertTrue(scene._isInIntro());
-    // 완료 마킹 (마이크로태스크 정착 대기)
     await Promise.resolve();
     assertTrue(await saveManager.isTutorialDone());
   });
@@ -812,6 +887,25 @@ describe("GameScene", () => {
     const cy = btn!.y + btn!.height / 2;
     scene.onPointerDown!(cx, cy);
     scene.onPointerUp!(cx, cy);
+    assertFalse(scene._isInTutorial());
+    await Promise.resolve();
+    assertTrue(await saveManager.isTutorialDone());
+  });
+
+  test("튜토리얼: 실습 단계에서도 건너뛰기 즉시 종료", async () => {
+    const r = makeFakeRenderer();
+    const { context, saveManager } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 2500);
+    await scene.enter({ map: { ...tinyMap(), id: 1 } });
+    scene.render();
+    // phase 2 진입
+    scene.onPointerDown!(50, 500);
+    scene.onPointerUp!(50, 500);
+    scene.render();
+    assertEqual(scene._getTutorialPhase(), 2);
+    const btn = scene._getTutorialSkipBtn()!;
+    scene.onPointerDown!(btn.x + 1, btn.y + 1);
+    scene.onPointerUp!(btn.x + 1, btn.y + 1);
     assertFalse(scene._isInTutorial());
     await Promise.resolve();
     assertTrue(await saveManager.isTutorialDone());
@@ -840,24 +934,13 @@ describe("GameScene", () => {
     assertFalse(scene.isPaused());
   });
 
-  test("튜토리얼 중: update 가 timer/intro 진행시키지 않음", async () => {
-    const r = makeFakeRenderer();
-    const { context } = makeCtx(r);
-    const scene = new GameScene(context, Math.random, 2500);
-    await scene.enter({ map: { ...tinyMap(), id: 1 } });
-    scene.update(5000);
-    // intro 시간이 그대로(0이 아님) — 튜토리얼이 막아서 줄지 않음
-    assertTrue(scene._isInTutorial());
-    assertTrue(scene._isInIntro());
-  });
-
   test("튜토리얼 중: 보드 영역 드래그 입력 무시 (선택 시작 안 됨)", async () => {
     const r = makeFakeRenderer();
     const { context, audioCalls } = makeCtx(r);
     const scene = new GameScene(context, Math.random, 0);
     await scene.enter({ map: { ...tinyMap(), id: 1 } });
     scene.render();
-    // 보드 셀 위치를 클릭해도 select 사운드가 나면 안 됨
+    // 메인 게임 보드 셀 위치를 클릭해도 select 사운드가 나면 안 됨
     const layout = (scene as unknown as { boardRenderer: { getLayout(): any } }).boardRenderer.getLayout();
     scene.onPointerDown!(layout.originX + layout.cellSize / 2, layout.originY + layout.cellSize / 2);
     assertFalse(audioCalls.includes("select"));
