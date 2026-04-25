@@ -23,19 +23,23 @@ package "core" {
 
 package "scenes" {
   interface Scene
-  class TitleScene
+  class TitleScene {
+    -page: number
+    +isPageUnlocked(n): boolean
+    +isMapUnlocked(id): boolean
+  }
   class GameScene {
     -score: number
-    +pauseGame()
-    +resumeGame()
-    +restartMap()
+    -elapsedMs: number
+    -chainCount: number
+    -bonusCell: { col, row, expireAtMs } | null
+    -nextWildSpawnMs / nextBonusSpawnMs
+    +pauseGame() / resumeGame() / restartMap()
   }
   class ResultScene
   class TutorialOverlay {
     -phase: number
-    +start()
-    +update(dt): TutorialResult
-    +onPointerUp(x,y): TutorialResult
+    +start() / update(dt) / onPointerUp(x,y)
   }
   Scene <|.. TitleScene
   Scene <|.. GameScene
@@ -48,27 +52,36 @@ package "game logic (pure)" {
   class Board {
     -grid: number[][]
     -lives: number[][]
+    -obstacles: boolean[][]
+    -wildcards: boolean[][]
+    -bonus: boolean[][]
     +applyMatch(positions): number
-    +applyGravity()
+    +applyGravity()  // wild/bonus 보존, obstacle 통과
     +refill(rng)
-    +snapshot()
-    +livesSnapshot()
+    +convertToWildcard(c,r) / markBonus(c,r) / unmarkBonus
+    +isObstacle / isWildcard / isBonus
+    +snapshot / livesSnapshot / obstaclesSnapshot
+    +wildcardsSnapshot / bonusSnapshot
   }
   class Selector {
     +begin(c,r) / extend(c,r)
     +commit(): SelectionResult
+    +isValidForRemoval()  // wildcard-aware
   }
   class Timer {
     +start() / pause() / resume()
-    +tick(dt)
-    +setElapsedMs(ms)
+    +tick(dt) / setElapsedMs(ms)
   }
   class Hint {
-    +request()
-    +tick(dt)
+    +request() / tick(dt)
   }
   Selector --> Board
   Hint --> Board
+  note bottom of Selector
+    isWildSum10:
+      W=만능 셀 수, S=고정합
+      (10-S) ∈ [W, 9·W] → 매치
+  end note
 }
 
 package "renderer" {
@@ -76,9 +89,16 @@ package "renderer" {
   class BoardRenderer {
     +setLayout(l)
     +draw(board, options)
+    ' phaseMs 옵션으로 보너스 무지개 애니메이션
   }
   class UIRenderer {
     +drawHUD(layout, state)
+  }
+  class EffectLayer {
+    +spawnRemoval(cells, layout, kind, opts?)
+    +spawnWildcardEntrance(c, r, layout)
+    +spawnBonusEntrance(c, r, layout)
+    +update(dt) / render(ctx) / clear()
   }
   BoardRenderer --> CanvasRenderer
   UIRenderer --> CanvasRenderer
@@ -87,13 +107,26 @@ package "renderer" {
 package "io" {
   class PointerInput
   class AudioManager
+  note bottom of AudioManager
+    sounds:
+    select / remove / hint / invalid
+    clear / gameover / button
+    wild / bonus
+  end note
 }
 
 package "data" {
-  class MapData <<value>>
+  class MapData <<value>> {
+    +id, name, cols, rows
+    +timeLimit, hintCount
+    +starThresholds[3]
+    +initialBoard, initialLives?
+    +initialObstacles?  // 101+ 도입
+    +initialWildcards?  // 동적 스폰용; 정적 맵은 미사용
+  }
   class MapLoader {
-    +loadMap(id)
-    +validateMap(input)
+    +loadMap(id) / validateMap(input)
+    +mapJsonUrl(id)
   }
 }
 
@@ -102,18 +135,27 @@ package "storage (IndexedDB v3)" {
     +saveBest / load / list
     +saveSession / loadSession / clearSession
     +markTutorialDone / isTutorialDone
+    +addHintCarryover / consumeHintCarryover / peekHintCarryover
   }
   interface ProgressStore
   interface MetaStore
   class ProgressRecord <<value>> {
     +mapId, score, stars
     +boardState, boardLives?
+    +boardObstacles?
+    +boardWildcards?
+    +boardBonus?
     +timeLeft, hintsLeft?
     +timestamp
   }
   SaveManager --> ProgressStore
   SaveManager --> MetaStore
   ProgressStore ..> ProgressRecord
+  note bottom of MetaStore
+    keys:
+    tutorial_done (bool)
+    hint_carryover (int)
+  end note
 }
 
 ' GameApp wires the top-level dependencies
@@ -129,7 +171,8 @@ GameScene *-- Timer
 GameScene *-- Hint
 GameScene *-- BoardRenderer
 GameScene *-- UIRenderer
-GameScene ..> SaveManager : sessions / meta
+GameScene *-- EffectLayer
+GameScene ..> SaveManager : sessions / meta / hint carryover
 GameScene ..> AudioManager
 GameScene ..> MapData
 
@@ -137,5 +180,5 @@ TutorialOverlay *-- BoardRenderer
 TutorialOverlay ..> Board : owns mini-board
 
 TitleScene ..> SaveManager : list best stars
-ResultScene ..> SaveManager : saveBest
+ResultScene ..> SaveManager : saveBest + addHintCarryover (★3)
 @enduml

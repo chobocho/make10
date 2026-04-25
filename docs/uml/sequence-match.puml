@@ -1,5 +1,5 @@
 @startuml sequence-match
-title Match Flow — Drag to Sum=10 → Damage / Gravity / Refill
+title Match Flow — Drag → Sum=10 (wildcard-aware) → Score (chain × bonus) → Effects → Stuck Rescue
 skinparam responseMessageBelowArrow true
 actor User
 participant "PointerInput" as PI
@@ -9,6 +9,7 @@ participant "GameScene" as GS
 participant "Selector" as Sel
 participant "Board" as Board
 participant "Hint" as Hint
+participant "EffectLayer" as Fx
 participant "AudioManager" as Audio
 
 User -> PI : touchstart / mousedown
@@ -16,7 +17,6 @@ PI -> App : onDown(x, y)
 App -> FSM : onPointerDown(x, y)
 FSM -> GS : onPointerDown(x, y)
 GS -> Sel : begin(col, row)
-Sel --> GS
 GS -> Audio : play("select")
 
 User -> PI : drag (move)
@@ -24,7 +24,10 @@ PI -> App : onMove(x, y)
 App -> FSM : onPointerMove(x, y)
 FSM -> GS : onPointerMove(x, y)
 GS -> Sel : extend(col, row)
-note right of Sel : adjacent only,\nlength <= 3
+note right of Sel
+  4-인접만, 길이 ≤ 3,
+  isWildSum10 으로 (W,X)/(W,W)/(W,X,Y) 허용
+end note
 
 User -> PI : touchend / mouseup
 PI -> App : onUp(x, y)
@@ -32,26 +35,66 @@ App -> FSM : onPointerUp(x, y)
 FSM -> GS : onPointerUp(x, y)
 GS -> Sel : commit() : { positions, sum, valid }
 
-alt valid match (sum == 10)
+alt valid match
+  GS -> Board : isBonus(c,r) for each pos\n→ hitBonus
   GS -> Board : applyMatch(positions)
   note right of Board
-    2-cell + both lives>=2:
-      damage = min(A.lives, B.lives)
-    else: 1 damage per cell
-    cells with lives -> 0 are removed
+    파괴 시 wild/bonus 플래그도 false 로 정리
+    멀티라이프: 양쪽 lives≥2 → min 데미지
   end note
-  Board --> GS : destroyedCount
-  GS -> Board : applyGravity()
+
+  GS -> GS : chainCount = (Δt ≤ 1s) ? prev+1 : 1\nchainBonus = min(250, 50·(chain-1))
+  GS -> GS : base = 100 (pair) / 300 (triple)\ntotal = (base + chainBonus) × (hitBonus ? 2 : 1)
+
+  GS -> Fx : spawnRemoval(destroyed, layout, kind,\n  { chainBonus?, scoreOverride?, multiplier? })
+  note right of Fx
+    파티클 + 점수 팝업 + (3셀) 링
+    multiplier>1 → 무지개 팔레트 + ×2 배지
+    chainBonus>0 → ⚡ +50 x2 배지 추가
+  end note
+
+  GS -> Board : applyGravity()  // wild/bonus 보존, obstacle 통과
   GS -> Board : refill(rng)
+  GS -> GS : syncBonusCellAfterMutation()
   GS -> Hint : clear()
+  GS -> GS : score += total
   GS -> Audio : play("remove")
-  GS -> GS : score += +100 / +250
-  GS -> Board : findValidCombination()
-  alt no valid combination
-    GS -> GS : endGame("stuck")
-    GS -> FSM : transition("result", result)
+
+  GS -> Board : findValidCombination()  // wildcard-aware
+  alt no valid combo & wildEnabled
+    GS -> Board : convertToWildcard(c, r)  // 임의 비-장애물·비-만능 셀
+    GS -> Fx : spawnWildcardEntrance(c, r, layout)
+    GS -> Audio : play("wild")
+    GS -> Board : findValidCombination() (재검사)
+    alt 여전히 없음
+      GS -> GS : endGame("stuck")
+      GS -> FSM : transition("result", result)
+    end
+  else 매치 가능
   end
-else invalid (>=2 cells, sum != 10)
+
+else invalid (≥2 cells, sum != 10)
   GS -> Audio : play("invalid")
+end
+
+== 백그라운드 타이머 (update 루프) ==
+App -> GS : update(deltaMs)
+GS -> GS : elapsedMs += deltaMs (활성 시간만)
+
+alt nextWildSpawnMs ≤ 0 (12-25s 인터벌)
+  GS -> Board : convertToWildcard(임의 셀)
+  GS -> Fx : spawnWildcardEntrance / Audio: "wild"
+  GS -> GS : nextWildSpawnMs = pickNextWildInterval()
+end
+
+alt !bonusCell && nextBonusSpawnMs ≤ 0 (10-12s 인터벌)
+  GS -> Board : markBonus(임의 셀)
+  GS -> GS : bonusCell = { col, row, expireAtMs = elapsedMs + rand(2-5s) }
+  GS -> Fx : spawnBonusEntrance / Audio: "bonus"
+end
+
+alt bonusCell && elapsedMs ≥ expireAtMs
+  GS -> Board : unmarkBonus(c, r)  // ×2 윈도우 만료, 셀은 일반 셀로 복귀
+  GS -> GS : bonusCell = null
 end
 @enduml
