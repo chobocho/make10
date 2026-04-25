@@ -63,6 +63,18 @@ const PHASES: ReadonlyArray<TutorialPhaseSpec> = [
     board: [[1, 2, 7]],
   },
   {
+    kind: "practice",
+    title: "↳ ㄱ자/L자도 OK!",
+    // 보드 [[5,3,1],[4,2,6]]:
+    //   2셀 합=10 조합 없음, 3셀 직선 합=10 없음 → 사용자는 반드시 꺾인 경로(ㄱ/L) 사용.
+    //   유효 경로: 5→3→2 (ㄱ), 3→1→6 (ㄱ), 그리고 그 역방향들.
+    prompt: "꺾어서도 가능 — 5 → 3 → 2",
+    board: [
+      [5, 3, 1],
+      [4, 2, 6],
+    ],
+  },
+  {
     kind: "text",
     title: "⭐ 점수와 별",
     body: [

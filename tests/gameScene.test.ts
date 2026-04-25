@@ -834,9 +834,9 @@ describe("GameScene", () => {
     assertEqual(scene._getTutorialPhase(), 2);
   });
 
-  test("튜토리얼 실습 phase 3: 1+2+7 드래그 → success → tutorial 종료(phase 4 text 진입)", async () => {
+  test("튜토리얼 실습 phase 3 → phase 4(꺾인 3셀 실습) 진입", async () => {
     const r = makeFakeRenderer();
-    const { context, saveManager } = makeCtx(r);
+    const { context } = makeCtx(r);
     const scene = new GameScene(context, Math.random, 2500);
     await scene.enter({ map: { ...tinyMap(), id: 1 } });
     scene.render();
@@ -844,7 +844,7 @@ describe("GameScene", () => {
     scene.onPointerDown!(50, 500);
     scene.onPointerUp!(50, 500);
     scene.render();
-    // phase 2 매치
+    // phase 2 매치 (3+7)
     let layout = scene._getTutorialBoardLayout()!;
     let a = { x: layout.originX + layout.cellSize / 2, y: layout.originY + layout.cellSize / 2 };
     let b = { x: layout.originX + layout.cellSize + layout.cellSize / 2, y: layout.originY + layout.cellSize / 2 };
@@ -862,12 +862,107 @@ describe("GameScene", () => {
     scene.onPointerMove!(mid.x, mid.y);
     scene.onPointerMove!(c.x, c.y);
     scene.onPointerUp!(c.x, c.y);
-    assertEqual(scene._getTutorialFeedback(), "success");
-    scene.update(900); // → phase 4 (text, finale)
+    scene.update(900); // → phase 4
     assertEqual(scene._getTutorialPhase(), 4);
-    assertEqual(scene._getTutorialPhaseKind(), "text");
-    // 마지막 텍스트 단계 탭으로 종료 → 완료 마킹
+    assertEqual(scene._getTutorialPhaseKind(), "practice");
+    // 미니 보드 차원: 3 cols × 2 rows
+    const layout4 = scene._getTutorialBoardLayout()!;
+    assertEqual(layout4.cols, 3);
+    assertEqual(layout4.rows, 2);
+  });
+
+  test("튜토리얼 실습 phase 4(ㄱ자): 5→3→2 드래그 성공 → phase 5(finale text) 진입", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 2500);
+    await scene.enter({ map: { ...tinyMap(), id: 1 } });
     scene.render();
+    // 단계 1→4 빠르게 진행 (이전 테스트와 동일 흐름 단축)
+    scene.onPointerDown!(50, 500);
+    scene.onPointerUp!(50, 500);
+    scene.render();
+    let layout = scene._getTutorialBoardLayout()!;
+    // phase 2 매치
+    scene.onPointerDown!(layout.originX + layout.cellSize / 2, layout.originY + layout.cellSize / 2);
+    scene.onPointerMove!(layout.originX + layout.cellSize + layout.cellSize / 2, layout.originY + layout.cellSize / 2);
+    scene.onPointerUp!(layout.originX + layout.cellSize + layout.cellSize / 2, layout.originY + layout.cellSize / 2);
+    scene.update(900);
+    scene.render();
+    layout = scene._getTutorialBoardLayout()!;
+    // phase 3 매치 (1+2+7)
+    scene.onPointerDown!(layout.originX + layout.cellSize / 2, layout.originY + layout.cellSize / 2);
+    scene.onPointerMove!(layout.originX + layout.cellSize + layout.cellSize / 2, layout.originY + layout.cellSize / 2);
+    scene.onPointerMove!(layout.originX + layout.cellSize * 2 + layout.cellSize / 2, layout.originY + layout.cellSize / 2);
+    scene.onPointerUp!(layout.originX + layout.cellSize * 2 + layout.cellSize / 2, layout.originY + layout.cellSize / 2);
+    scene.update(900);
+    scene.render();
+    assertEqual(scene._getTutorialPhase(), 4);
+    layout = scene._getTutorialBoardLayout()!;
+    // phase 4 보드 [[5,3,1],[4,2,6]]: 5(0,0) → 3(1,0) → 2(1,1) ㄱ자 매치
+    const cellCenter = (col: number, row: number) => ({
+      x: layout.originX + col * layout.cellSize + layout.cellSize / 2,
+      y: layout.originY + row * layout.cellSize + layout.cellSize / 2,
+    });
+    const p5 = cellCenter(0, 0);
+    const p3 = cellCenter(1, 0);
+    const p2 = cellCenter(1, 1);
+    scene.onPointerDown!(p5.x, p5.y);
+    scene.onPointerMove!(p3.x, p3.y);
+    scene.onPointerMove!(p2.x, p2.y);
+    scene.onPointerUp!(p2.x, p2.y);
+    assertEqual(scene._getTutorialFeedback(), "success");
+    scene.update(900); // → phase 5
+    assertEqual(scene._getTutorialPhase(), 5);
+    assertEqual(scene._getTutorialPhaseKind(), "text");
+  });
+
+  test("튜토리얼 실습 phase 4: 다른 ㄱ자 경로(3→1→6)도 정답 인식", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 2500);
+    await scene.enter({ map: { ...tinyMap(), id: 1 } });
+    scene.render();
+    // 단계 1→4 진행
+    scene.onPointerDown!(50, 500); scene.onPointerUp!(50, 500); scene.render();
+    let layout = scene._getTutorialBoardLayout()!;
+    scene.onPointerDown!(layout.originX + layout.cellSize / 2, layout.originY + layout.cellSize / 2);
+    scene.onPointerMove!(layout.originX + layout.cellSize + layout.cellSize / 2, layout.originY + layout.cellSize / 2);
+    scene.onPointerUp!(layout.originX + layout.cellSize + layout.cellSize / 2, layout.originY + layout.cellSize / 2);
+    scene.update(900); scene.render();
+    layout = scene._getTutorialBoardLayout()!;
+    scene.onPointerDown!(layout.originX + layout.cellSize / 2, layout.originY + layout.cellSize / 2);
+    scene.onPointerMove!(layout.originX + layout.cellSize + layout.cellSize / 2, layout.originY + layout.cellSize / 2);
+    scene.onPointerMove!(layout.originX + layout.cellSize * 2 + layout.cellSize / 2, layout.originY + layout.cellSize / 2);
+    scene.onPointerUp!(layout.originX + layout.cellSize * 2 + layout.cellSize / 2, layout.originY + layout.cellSize / 2);
+    scene.update(900); scene.render();
+    layout = scene._getTutorialBoardLayout()!;
+    // 3(1,0) → 1(2,0) → 6(2,1) — 다른 ㄱ자 경로
+    const cellCenter = (col: number, row: number) => ({
+      x: layout.originX + col * layout.cellSize + layout.cellSize / 2,
+      y: layout.originY + row * layout.cellSize + layout.cellSize / 2,
+    });
+    const p3 = cellCenter(1, 0);
+    const p1 = cellCenter(2, 0);
+    const p6 = cellCenter(2, 1);
+    scene.onPointerDown!(p3.x, p3.y);
+    scene.onPointerMove!(p1.x, p1.y);
+    scene.onPointerMove!(p6.x, p6.y);
+    scene.onPointerUp!(p6.x, p6.y);
+    assertEqual(scene._getTutorialFeedback(), "success");
+  });
+
+  test("튜토리얼 phase 5(finale text): 탭으로 종료 + 완료 마킹", async () => {
+    const r = makeFakeRenderer();
+    const { context, saveManager } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 2500);
+    await scene.enter({ map: { ...tinyMap(), id: 1 } });
+    // 모든 실습을 자동으로 통과시키기 위해 내부 상태 직접 주입 (테스트 단축).
+    // tutorial 인스턴스를 phase 5(text) 로 강제 전이.
+    const tutorial = (scene as unknown as { tutorial: { phase: number; setupPhase(): void; advance(): unknown } }).tutorial;
+    tutorial.phase = 5;
+    tutorial.setupPhase();
+    scene.render();
+    // 텍스트 단계 탭으로 종료
     scene.onPointerDown!(50, 500);
     scene.onPointerUp!(50, 500);
     assertFalse(scene._isInTutorial());
