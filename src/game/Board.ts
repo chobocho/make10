@@ -30,6 +30,8 @@ export class Board {
   private readonly obstacles: boolean[][];
   /** wild[row][col] — 만능(?) 블럭 여부. true면 grid=0, lives≥1, obstacle=false. */
   private readonly wildcards: boolean[][];
+  /** bonus[row][col] — 매치 파괴 시 점수 ×2 인 보너스 셀. grid는 원래 1~9 그대로. */
+  private readonly bonus: boolean[][];
 
   constructor(
     initial: ReadonlyArray<ReadonlyArray<Cell>>,
@@ -163,6 +165,9 @@ export class Board {
     } else {
       this.obstacles = this.grid.map((row) => row.map(() => false));
     }
+
+    // bonus — 항상 false로 시작. 외부에서 markBonus 로 동적 부여.
+    this.bonus = this.grid.map((row) => row.map(() => false));
   }
 
   getCols(): number {
@@ -217,6 +222,33 @@ export class Board {
     return this.wildcards[row][col];
   }
 
+  isBonus(col: number, row: number): boolean {
+    if (!this.inBounds(col, row)) {
+      throw new RangeError(`Board.isBonus: 경계 밖 (${col},${row}).`);
+    }
+    return this.bonus[row][col];
+  }
+
+  /**
+   * 셀에 보너스 플래그를 부여. 일반 숫자 셀(grid 1~9, 비-장애물, 비-만능)에서만 성공.
+   * @returns 부여 성공 여부.
+   */
+  markBonus(col: number, row: number): boolean {
+    if (!this.inBounds(col, row)) return false;
+    if (this.obstacles[row][col]) return false;
+    if (this.wildcards[row][col]) return false;
+    if (this.grid[row][col] === 0) return false;
+    if (this.bonus[row][col]) return false;
+    this.bonus[row][col] = true;
+    return true;
+  }
+
+  /** 보너스 플래그 해제. 셀 자체는 변경하지 않음. */
+  unmarkBonus(col: number, row: number): void {
+    if (!this.inBounds(col, row)) return;
+    this.bonus[row][col] = false;
+  }
+
   /** 셀을 즉시 비운다(테스트/레거시 용). lives/wildcard 도 정리. */
   clearCell(col: number, row: number): void {
     if (!this.inBounds(col, row)) {
@@ -225,6 +257,7 @@ export class Board {
     this.grid[row][col] = 0;
     this.lives[row][col] = 0;
     this.wildcards[row][col] = false;
+    this.bonus[row][col] = false;
   }
 
   clearCells(positions: ReadonlyArray<Position>): void {
@@ -271,6 +304,7 @@ export class Board {
     if (next === 0) {
       this.grid[row][col] = 0;
       this.wildcards[row][col] = false;
+      this.bonus[row][col] = false;
       return 1;
     }
     return 0;
@@ -333,25 +367,36 @@ export class Board {
       for (let r = 0; r < this.rows; r++) {
         if (!this.obstacles[r][c]) slots.push(r);
       }
-      const blocks: Array<{ value: number; life: number; wild: boolean }> = [];
+      const blocks: Array<{ value: number; life: number; wild: boolean; bonus: boolean }> = [];
       for (const r of slots) {
         const v = this.grid[r][c];
         const w = this.wildcards[r][c];
         // 빈칸 판정: grid===0 && !wild. wildcard 도 블럭으로 취급해 같이 낙하한다.
         if (v !== 0 || w) {
-          blocks.push({ value: v, life: this.lives[r][c], wild: w });
+          blocks.push({
+            value: v,
+            life: this.lives[r][c],
+            wild: w,
+            bonus: this.bonus[r][c],
+          });
         }
       }
       const emptyCount = slots.length - blocks.length;
       // 상단 emptyCount 슬롯은 비움
       for (let i = 0; i < emptyCount; i++) {
         const r = slots[i];
-        if (this.grid[r][c] !== 0 || this.lives[r][c] !== 0 || this.wildcards[r][c]) {
+        if (
+          this.grid[r][c] !== 0 ||
+          this.lives[r][c] !== 0 ||
+          this.wildcards[r][c] ||
+          this.bonus[r][c]
+        ) {
           moved = true;
         }
         this.grid[r][c] = 0;
         this.lives[r][c] = 0;
         this.wildcards[r][c] = false;
+        this.bonus[r][c] = false;
       }
       // 하단 슬롯에 순서 그대로 배치
       for (let i = 0; i < blocks.length; i++) {
@@ -360,13 +405,15 @@ export class Board {
         if (
           this.grid[r][c] !== item.value ||
           this.lives[r][c] !== item.life ||
-          this.wildcards[r][c] !== item.wild
+          this.wildcards[r][c] !== item.wild ||
+          this.bonus[r][c] !== item.bonus
         ) {
           moved = true;
         }
         this.grid[r][c] = item.value;
         this.lives[r][c] = item.life;
         this.wildcards[r][c] = item.wild;
+        this.bonus[r][c] = item.bonus;
       }
     }
     return moved;
@@ -408,6 +455,11 @@ export class Board {
     return this.wildcards.map((row) => row.slice());
   }
 
+  /** bonus 배열 사본 (boolean). 세션 저장용. 보너스는 게임 중 동적으로 부여/해제. */
+  bonusSnapshot(): boolean[][] {
+    return this.bonus.map((row) => row.slice());
+  }
+
   /** 남은 비어있지 않은 셀 개수. */
   remainingCount(): number {
     let n = 0;
@@ -426,6 +478,7 @@ export class Board {
     value: number;
     lives: number;
     wild: boolean;
+    bonus: boolean;
   }> {
     for (let r = 0; r < this.rows; r++) {
       for (let c = 0; c < this.cols; c++) {
@@ -436,6 +489,7 @@ export class Board {
           value: this.grid[r][c],
           lives: this.lives[r][c],
           wild: this.wildcards[r][c],
+          bonus: this.bonus[r][c],
         };
       }
     }

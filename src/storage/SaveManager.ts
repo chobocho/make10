@@ -25,6 +25,8 @@ export interface ProgressRecord {
   readonly boardObstacles?: ReadonlyArray<ReadonlyArray<number>>;
   /** 세션 복원용 — 셀별 만능(?) 여부(0/1). 미설정이면 만능 블럭 없음. */
   readonly boardWildcards?: ReadonlyArray<ReadonlyArray<number>>;
+  /** 세션 복원용 — 셀별 보너스(×2) 플래그(0/1). 미설정이면 보너스 없음. */
+  readonly boardBonus?: ReadonlyArray<ReadonlyArray<number>>;
   readonly timestamp: number;
 }
 

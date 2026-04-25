@@ -1224,6 +1224,140 @@ describe("GameScene + 매치 이펙트", () => {
   });
 });
 
+describe("GameScene + 보너스(×2) 블럭", () => {
+  function plainPairMap(): MapData {
+    return {
+      ...tinyMap(),
+      cols: 2,
+      rows: 1,
+      timeLimit: 999,
+      starThresholds: [50, 150, 300],
+      initialBoard: [[4, 6]],
+    };
+  }
+
+  test("trySpawnBonus: 활성 보너스가 없을 때만 1개 부여 + bonusCell 갱신", async () => {
+    const r = makeFakeRenderer();
+    const { context, audioCalls } = makeCtx(r);
+    const scene = new GameScene(context, () => 0, 0);
+    await scene.enter({ map: plainPairMap() });
+    scene._setWildEnabled(false); // 만능 회복으로 인한 보너스 후보 변동 차단
+    const ok = scene._trySpawnBonus();
+    assertTrue(ok);
+    const bc = scene._getBonusCell();
+    assertTrue(bc !== null);
+    const board = (scene as unknown as { board: import("../src/game/Board").Board }).board;
+    assertTrue(board.isBonus(bc!.col, bc!.row));
+    assertTrue(audioCalls.includes("bonus"));
+    // 이미 활성 보너스 — 두 번째 스폰은 거부
+    assertFalse(scene._trySpawnBonus());
+  });
+
+  test("매치에 보너스 셀 포함 시 점수 ×2", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    const scene = new GameScene(context, () => 0, 0);
+    await scene.enter({ map: plainPairMap() });
+    scene._setWildEnabled(false);
+    const board = (scene as unknown as { board: import("../src/game/Board").Board }).board;
+    board.markBonus(0, 0);
+    // bonusCell 동기화 — 외부에서 markBonus 한 경우를 대비.
+    (scene as unknown as { bonusCell: { col: number; row: number; expireAtMs: number } }).bonusCell = {
+      col: 0,
+      row: 0,
+      expireAtMs: 99999,
+    };
+    scene.render();
+    const layout = (scene as unknown as { boardRenderer: { getLayout(): any } }).boardRenderer.getLayout();
+    const a = { x: layout.originX + layout.cellSize / 2, y: layout.originY + layout.cellSize / 2 };
+    const b = { x: layout.originX + layout.cellSize + layout.cellSize / 2, y: layout.originY + layout.cellSize / 2 };
+    scene.onPointerDown!(a.x, a.y);
+    scene.onPointerMove!(b.x, b.y);
+    scene.onPointerUp!(b.x, b.y);
+    // 베이스 100 × 2 = 200 (연쇄 없음, 첫 매치).
+    assertEqual(scene._getScore(), 200);
+    // 매치 후 보너스 셀이 파괴됨 → bonusCell null.
+    assertEqual(scene._getBonusCell(), null);
+  });
+
+  test("매치에 보너스 셀 미포함 시 일반 점수", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    const scene = new GameScene(context, () => 0, 0);
+    await scene.enter({
+      map: {
+        ...plainPairMap(),
+        cols: 4,
+        rows: 1,
+        initialBoard: [[4, 6, 3, 7]],
+      },
+    });
+    scene._setWildEnabled(false);
+    const board = (scene as unknown as { board: import("../src/game/Board").Board }).board;
+    board.markBonus(2, 0); // (3,?) 자리에 보너스 — 매치는 다른 쌍에서 발생
+    scene.render();
+    const layout = (scene as unknown as { boardRenderer: { getLayout(): any } }).boardRenderer.getLayout();
+    const a = { x: layout.originX + layout.cellSize / 2, y: layout.originY + layout.cellSize / 2 };
+    const b = { x: layout.originX + layout.cellSize * 1.5, y: layout.originY + layout.cellSize / 2 };
+    scene.onPointerDown!(a.x, a.y);
+    scene.onPointerMove!(b.x, b.y);
+    scene.onPointerUp!(b.x, b.y);
+    // (0,0)+(1,0) = 4+6=10 매치. 보너스는 (2,0)이라 미포함 → 일반 100점.
+    assertEqual(scene._getScore(), 100);
+  });
+
+  test("자동 스폰 타이머: 12초 경과 시 보너스 1개 활성 (rand=0.5 → 11s 인터벌)", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    // rand=0.5 → 인터벌 = 10000 + 0.5*(12000-10000) = 11000ms
+    const scene = new GameScene(context, () => 0.5, 0);
+    await scene.enter({
+      map: {
+        ...plainPairMap(),
+        cols: 3,
+        rows: 1,
+        initialBoard: [[1, 2, 7]],
+      },
+    });
+    scene._setWildEnabled(false); // 자동 만능 스폰 격리
+    assertEqual(scene._getBonusCell(), null);
+    scene.update(12_000);
+    assertTrue(scene._getBonusCell() !== null);
+  });
+
+  test("만료(2-5s 윈도우): 매치 안하면 자동 해제 (보드 그대로, 점수 변화 없음)", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    // rand=0.5 → 인터벌 11s, 윈도우 2000+0.5*3000=3500ms
+    const scene = new GameScene(context, () => 0.5, 0);
+    await scene.enter({ map: plainPairMap() });
+    scene._setWildEnabled(false);
+    scene.update(12_000); // 보너스 스폰
+    const bc = scene._getBonusCell();
+    assertTrue(bc !== null);
+    const { col, row } = bc!;
+    // 윈도우 만료까지 대기 (스폰 시점부터 3500ms + 마진).
+    scene.update(4_000);
+    assertEqual(scene._getBonusCell(), null);
+    const board = (scene as unknown as { board: import("../src/game/Board").Board }).board;
+    assertFalse(board.isBonus(col, row));
+    // 점수 변화 없음
+    assertEqual(scene._getScore(), 0);
+  });
+
+  test("bonusEnabled=false: 자동 스폰 안 됨", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    const scene = new GameScene(context, () => 0.5, 0);
+    await scene.enter({ map: plainPairMap() });
+    scene._setBonusEnabled(false);
+    scene._setWildEnabled(false);
+    scene.update(60_000);
+    assertEqual(scene._getBonusCell(), null);
+    assertEqual(scene._getNextBonusSpawnMs(), Number.POSITIVE_INFINITY);
+  });
+});
+
 describe("GameScene + 만능(?) 블럭", () => {
   test("trySpawnWildcard: 비-장애물 비-빈칸 셀을 만능으로 변환", async () => {
     const r = makeFakeRenderer();

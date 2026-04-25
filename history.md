@@ -276,6 +276,41 @@
   - 3→1→6 다른 ㄱ자 경로도 정답 인식
   - phase 5 finale 텍스트 탭 → 종료 + 완료 마킹
 
+## 2026-04-25 — 이슈 #34 보너스(×2) 블럭
+
+매치 시 점수 ×2 를 주는 시간 제한 보너스 블럭 도입.
+
+### 데이터 모델 (Board)
+- `bonus[r][c]: boolean` 플래그 추가 (장애물/만능과 별도, 일반 숫자 셀에 부여).
+- `isBonus`, `markBonus`, `unmarkBonus`, `bonusSnapshot` API.
+- `applyDamageAt` → 파괴 시 bonus 플래그도 정리.
+- `applyGravity` → 보너스 플래그가 셀과 함께 떨어짐.
+- `clearCell`/`nonEmptyCells` 도 bonus 처리.
+
+### GameScene
+- 상수: `BONUS_SPAWN_MIN_MS=10000`, `MAX_MS=12000`. 윈도우 `MIN=2000~MAX=5000`. `MULTIPLIER=2`.
+- 동시 1개만 활성. `bonusCell { col, row, expireAtMs }` 추적.
+- `update`: 보너스 만료 검사(elapsedMs ≥ expireAtMs → unmarkBonus + cell=null) + 비활성 시 스폰 카운트다운.
+- `trySpawnBonus`: 일반 숫자 셀(grid>0, 비-장애물·비-만능·비-보너스) 중 임의 선택.
+- 매치 경로:
+  - 매치 직전 보너스 적중 여부 캡처(positions 중 isBonus).
+  - hitBonus면 (base + chainBonus) × 2.
+  - `syncBonusCellAfterMutation`: 중력으로 좌표 이동/파괴된 보너스 셀의 위치 추적.
+- `_setBonusEnabled(false)`/`_trySpawnBonus`/`_getBonusCell` 테스트 토글.
+
+### 시각 + 사운드
+- `BoardRenderer`: bonus 셀에 `phaseMs / 18` 기반 HSL 회전 그라데이션(보드 그리기 옵션 `phaseMs` 추가) + 흰 외곽선 + 좌상단 `×2` 배지.
+- 선택/힌트 색은 보너스 위에 반투명 오버레이로 합성.
+- `EffectLayer.spawnBonusEntrance`: 18 무지개 파티클 수렴 + 핑크/노랑 2겹 링 + `×2` 라벨.
+- `RemovalOptions`에 `multiplier`, `scoreOverride` 추가 — `multiplier>1` 시 무지개 팔레트 + `× 2` 배지 + 핑크 링.
+- `AudioManager` `bonus` 사운드 (523-1397Hz, 480ms, triangle).
+- `SaveManager.ProgressRecord.boardBonus` 옵셔널 필드(저장만, 복원 미사용).
+
+### 테스트 (13건 추가)
+- Board 7건: markBonus 성공/실패 케이스, unmark, applyMatch/applyGravity 정합성, snapshot.
+- GameScene 6건: trySpawnBonus, ×2 적중/미적중, 자동 스폰 타이머, 만료 자동 해제, _setBonusEnabled.
+- 검증: 363/363 pass (5회 안정), 번들 123.8 → 133.9KB.
+
 ## 2026-04-25 — 이슈 #33 만능(?) 블럭
 
 어떤 숫자와도 합 10 매치를 만드는 wildcard 블럭 도입.

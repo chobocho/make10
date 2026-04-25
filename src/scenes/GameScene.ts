@@ -67,6 +67,14 @@ const WILD_SPAWN_MIN_MS = 12_000;
 const WILD_SPAWN_MAX_MS = 25_000;
 /** 보드에 동시에 존재할 수 있는 만능 블럭 최대 개수 — 게임이 너무 쉬워지지 않도록. */
 const WILD_MAX_ON_BOARD = 3;
+/** 보너스(×2) 블럭 자동 스폰 — 매 [MIN, MAX] 사이 랜덤 인터벌마다 1개. */
+const BONUS_SPAWN_MIN_MS = 10_000;
+const BONUS_SPAWN_MAX_MS = 12_000;
+/** 스폰된 보너스 블럭이 만료되기까지의 윈도우 — [MIN, MAX]. 이 시간 안에 매치해야 ×2. */
+const BONUS_WINDOW_MIN_MS = 2_000;
+const BONUS_WINDOW_MAX_MS = 5_000;
+/** 보너스 매치 시 점수 배수. */
+const BONUS_MULTIPLIER = 2;
 
 export class GameScene implements Scene {
   private readonly context: SceneContext;
@@ -103,6 +111,12 @@ export class GameScene implements Scene {
   private nextWildSpawnMs: number;
   /** 만능 메커니즘(자동 스폰 + stuck 회복) 전체 토글. 테스트가 결정적 흐름을 위해 끌 수 있다. */
   private wildEnabled: boolean;
+  /** 다음 자동 보너스(×2) 스폰까지 남은 시간(ms). */
+  private nextBonusSpawnMs: number;
+  /** 현재 활성 보너스 셀 위치 + 만료 시각(elapsedMs 단위). 한 번에 1개만 활성. */
+  private bonusCell: { col: number; row: number; expireAtMs: number } | null;
+  /** 보너스 메커니즘 토글 — 테스트 옵트아웃용. */
+  private bonusEnabled: boolean;
 
   constructor(
     context: SceneContext,
@@ -135,6 +149,9 @@ export class GameScene implements Scene {
     this.chainCount = 0;
     this.nextWildSpawnMs = 0;
     this.wildEnabled = true;
+    this.nextBonusSpawnMs = 0;
+    this.bonusCell = null;
+    this.bonusEnabled = true;
   }
 
   async enter(args?: unknown): Promise<void> {
@@ -190,6 +207,8 @@ export class GameScene implements Scene {
     this.lastMatchAtMs = Number.NEGATIVE_INFINITY;
     this.chainCount = 0;
     this.nextWildSpawnMs = this.pickNextWildInterval();
+    this.nextBonusSpawnMs = this.pickNextBonusInterval();
+    this.bonusCell = null;
     this.ended = false;
     this.pressedHintBtn = false;
     this.pressedPauseBtn = false;
@@ -264,6 +283,7 @@ export class GameScene implements Scene {
       boardLives: this.board.livesSnapshot(),
       boardObstacles: this.board.obstaclesSnapshot().map((row) => row.map((v) => (v ? 1 : 0))),
       boardWildcards: this.board.wildcardsSnapshot().map((row) => row.map((v) => (v ? 1 : 0))),
+      boardBonus: this.board.bonusSnapshot().map((row) => row.map((v) => (v ? 1 : 0))),
       score: this.score,
       stars: computeStars(this.score, this.map.starThresholds),
       timeLeft: this.timer.getRemainingSeconds(),
@@ -362,6 +382,99 @@ export class GameScene implements Scene {
         this.nextWildSpawnMs = this.pickNextWildInterval();
       }
     }
+    // 보너스 스폰 + 만료.
+    if (this.bonusEnabled) {
+      // 만료 체크 — 활성 보너스가 있고 elapsedMs가 윈도우 종료를 넘으면 해제.
+      if (this.bonusCell && this.elapsedMs >= this.bonusCell.expireAtMs) {
+        this.expireBonus();
+      }
+      // 새 스폰 타이머 — 활성 보너스가 없을 때만 카운트다운.
+      if (!this.bonusCell) {
+        this.nextBonusSpawnMs -= deltaMs;
+        if (this.nextBonusSpawnMs <= 0) {
+          this.trySpawnBonus();
+          this.nextBonusSpawnMs = this.pickNextBonusInterval();
+        }
+      }
+    }
+  }
+
+  private pickNextBonusInterval(): number {
+    return BONUS_SPAWN_MIN_MS + this.randomFn() * (BONUS_SPAWN_MAX_MS - BONUS_SPAWN_MIN_MS);
+  }
+
+  private pickBonusWindow(): number {
+    return BONUS_WINDOW_MIN_MS + this.randomFn() * (BONUS_WINDOW_MAX_MS - BONUS_WINDOW_MIN_MS);
+  }
+
+  /**
+   * 보너스 블럭 스폰 — 일반 숫자 셀(grid>0, 비-장애물·비-만능·비-보너스) 중 임의 선택.
+   * 활성 보너스가 이미 존재하면 무시(한 번에 1개).
+   * @returns 스폰 성공 여부.
+   */
+  private trySpawnBonus(): boolean {
+    if (!this.board) return false;
+    if (this.bonusCell) return false;
+    const candidates: Array<readonly [number, number]> = [];
+    for (let r = 0; r < this.board.getRows(); r++) {
+      for (let c = 0; c < this.board.getCols(); c++) {
+        if (this.board.isObstacle(c, r)) continue;
+        if (this.board.isWildcard(c, r)) continue;
+        if (this.board.isBonus(c, r)) continue;
+        if (this.board.isEmpty(c, r)) continue;
+        candidates.push([c, r] as const);
+      }
+    }
+    if (candidates.length === 0) return false;
+    const idx = Math.floor(this.randomFn() * candidates.length);
+    const [c, r] = candidates[idx];
+    if (!this.board.markBonus(c, r)) return false;
+    this.bonusCell = {
+      col: c,
+      row: r,
+      expireAtMs: this.elapsedMs + this.pickBonusWindow(),
+    };
+    this.effects.spawnBonusEntrance(c, r, this.boardRenderer.getLayout());
+    this.context.audio.play("bonus");
+    return true;
+  }
+
+  /** 만료: 보너스 플래그 해제. 셀 자체는 일반 셀로 남는다. 시각 피드백은 생략(은은하게). */
+  private expireBonus(): void {
+    if (!this.bonusCell || !this.board) {
+      this.bonusCell = null;
+      return;
+    }
+    const { col, row } = this.bonusCell;
+    this.board.unmarkBonus(col, row);
+    this.bonusCell = null;
+  }
+
+  /**
+   * 중력 적용 후 bonusCell 추적 — bonus 플래그가 다른 좌표로 이동했을 수 있음.
+   * 보드 전체에서 bonus 플래그를 가진 셀을 찾아 bonusCell 좌표 업데이트.
+   * 플래그가 사라졌다면(파괴됨) bonusCell = null.
+   */
+  private syncBonusCellAfterMutation(): void {
+    if (!this.bonusCell || !this.board) return;
+    let found: { col: number; row: number } | null = null;
+    outer: for (let r = 0; r < this.board.getRows(); r++) {
+      for (let c = 0; c < this.board.getCols(); c++) {
+        if (this.board.isBonus(c, r)) {
+          found = { col: c, row: r };
+          break outer;
+        }
+      }
+    }
+    if (!found) {
+      this.bonusCell = null;
+    } else {
+      this.bonusCell = {
+        col: found.col,
+        row: found.row,
+        expireAtMs: this.bonusCell.expireAtMs,
+      };
+    }
   }
 
   private pickNextWildInterval(): number {
@@ -410,6 +523,7 @@ export class GameScene implements Scene {
       selection,
       invalidSelection: invalid,
       highlight: this.hint.getHighlighted(),
+      phaseMs: this.elapsedMs,
     });
     // 이펙트는 보드 위, HUD 아래.
     if (this.effects.hasActive()) {
@@ -637,11 +751,15 @@ export class GameScene implements Scene {
     if (!this.selector || !this.board) return;
     const result = this.selector.commit();
     if (result.valid) {
-      // 매치 적용 전 보드 좌표/lives 캡처 → 실제로 lives→0 으로 파괴된 셀만 이펙트 스폰.
+      // 매치 적용 전 보드 좌표/lives/bonus 캡처 → 실제로 lives→0 으로 파괴된 셀과 보너스 적중 판단.
       const boardLayout = this.boardRenderer.getLayout();
       const positions = result.positions;
       const preLives: number[] = [];
-      for (const [c, r] of positions) preLives.push(this.board.getLives(c, r));
+      let hitBonus = false;
+      for (const [c, r] of positions) {
+        preLives.push(this.board.getLives(c, r));
+        if (this.board.isBonus(c, r)) hitBonus = true;
+      }
       this.board.applyMatch(positions);
       const destroyed: Array<readonly [number, number]> = [];
       for (let i = 0; i < positions.length; i++) {
@@ -650,7 +768,7 @@ export class GameScene implements Scene {
           destroyed.push([c, r] as const);
         }
       }
-      // 연쇄 판정: 직전 매치로부터 CHAIN_WINDOW_MS 이내면 chainCount 증가, 아니면 1로 리셋.
+      // 연쇄 판정.
       const within = this.elapsedMs - this.lastMatchAtMs <= CHAIN_WINDOW_MS;
       this.chainCount = within ? this.chainCount + 1 : 1;
       this.lastMatchAtMs = this.elapsedMs;
@@ -659,16 +777,21 @@ export class GameScene implements Scene {
         this.chainCount >= 2
           ? Math.min(CHAIN_BONUS_CAP, CHAIN_BONUS_STEP * (this.chainCount - 1))
           : 0;
-      this.effects.spawnRemoval(
-        destroyed,
-        boardLayout,
-        positions.length === 3 ? "triple" : "pair",
-        chainBonus > 0 ? { chainBonus, chainDepth: this.chainCount } : undefined,
-      );
+      // 보너스(×2) 적중: 베이스+연쇄 합계에 배수 적용.
+      const subtotal = baseScore + chainBonus;
+      const total = hitBonus ? subtotal * BONUS_MULTIPLIER : subtotal;
+      this.effects.spawnRemoval(destroyed, boardLayout, positions.length === 3 ? "triple" : "pair", {
+        chainBonus: chainBonus > 0 ? chainBonus : undefined,
+        chainDepth: chainBonus > 0 ? this.chainCount : undefined,
+        scoreOverride: hitBonus || chainBonus > 0 ? total : undefined,
+        multiplier: hitBonus ? BONUS_MULTIPLIER : undefined,
+      });
       this.board.applyGravity();
       this.board.refill(this.randomFn);
       this.hint?.clear();
-      this.score += baseScore + chainBonus;
+      // 중력으로 bonusCell 위치가 이동했거나 파괴되어 사라졌을 수 있으므로 동기화.
+      this.syncBonusCellAfterMutation();
+      this.score += total;
       this.context.audio.play("remove");
       // stuck 구원: 유효 조합이 없으면 만능 블럭을 임의 위치에 스폰해 게임 계속.
       // 만능 변환 후에도 여전히 매치 경로가 없는 극단 상황이면 endGame.
@@ -770,6 +893,25 @@ export class GameScene implements Scene {
   }
   _getNextWildSpawnMs(): number {
     return this.nextWildSpawnMs;
+  }
+  _setBonusEnabled(enabled: boolean): void {
+    this.bonusEnabled = enabled;
+    if (!enabled) {
+      this.nextBonusSpawnMs = Number.POSITIVE_INFINITY;
+      if (this.bonusCell && this.board) {
+        this.board.unmarkBonus(this.bonusCell.col, this.bonusCell.row);
+      }
+      this.bonusCell = null;
+    }
+  }
+  _trySpawnBonus(): boolean {
+    return this.trySpawnBonus();
+  }
+  _getBonusCell(): { col: number; row: number; expireAtMs: number } | null {
+    return this.bonusCell;
+  }
+  _getNextBonusSpawnMs(): number {
+    return this.nextBonusSpawnMs;
   }
 }
 

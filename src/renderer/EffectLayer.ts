@@ -200,6 +200,10 @@ export interface RemovalOptions {
   readonly chainBonus?: number;
   /** 연쇄 단계(2 이상에서 의미 있음). 배지 라벨에 사용. */
   readonly chainDepth?: number;
+  /** 매치 결과로 추가될 총 점수 — 지정 시 베이스 팝업의 텍스트가 이 값으로 대체됨. */
+  readonly scoreOverride?: number;
+  /** ×2 등 배수 표시 — 1보다 크면 무지개 팔레트 + 배수 배지 추가. */
+  readonly multiplier?: number;
 }
 
 export class EffectLayer {
@@ -230,9 +234,19 @@ export class EffectLayer {
     const particleLife = isTriple ? 620 : 420;
     const baseSpeed = isTriple ? size * 5.0 : size * 3.6;
 
-    const colors = isTriple
-      ? ["#fff7c2", "#ffd166", "#ff9a3c", "#ff6f3c"]
-      : ["#ffffff", "#fff2a8", "#7dd4fc"];
+    const hasMultiplier = (options?.multiplier ?? 1) > 1;
+    const colors = hasMultiplier
+      ? [
+          "hsl(0, 90%, 60%)",
+          "hsl(45, 95%, 60%)",
+          "hsl(120, 80%, 55%)",
+          "hsl(200, 90%, 60%)",
+          "hsl(280, 80%, 65%)",
+          "hsl(330, 90%, 65%)",
+        ]
+      : isTriple
+        ? ["#fff7c2", "#ffd166", "#ff9a3c", "#ff6f3c"]
+        : ["#ffffff", "#fff2a8", "#7dd4fc"];
 
     const particles: Particle[] = [];
     let sumX = 0;
@@ -265,19 +279,33 @@ export class EffectLayer {
     // 점수 팝업 — 셀들의 중심점.
     const cx = sumX / cells.length;
     const cy = sumY / cells.length;
+    // 베이스 팝업 — scoreOverride 지정 시 그 텍스트로, 아니면 기본 (+100/+300).
+    const baseLabel =
+      options?.scoreOverride !== undefined
+        ? `+${options.scoreOverride}`
+        : isTriple
+          ? "+300"
+          : "+100";
+    const popupColor = hasMultiplier ? "#ffd166" : isTriple ? "#ffd166" : "#fff7c2";
+    const popupFont = isTriple ? Math.max(28, size * 0.7) : Math.max(20, size * 0.5);
+    const popupLifeMs = isTriple ? 950 : 720;
+    this.effects.push(new ScorePopup(cx, cy, baseLabel, popupFont, popupColor, popupLifeMs));
     if (isTriple) {
-      this.effects.push(
-        new ScorePopup(cx, cy, "+300", Math.max(28, size * 0.7), "#ffd166", 950),
-      );
       this.effects.push(
         new ExpandingRing(cx, cy, size * 1.8, 520, "#ffd166", Math.max(3, size * 0.06)),
       );
       this.effects.push(
         new ExpandingRing(cx, cy, size * 1.2, 360, "#fff2a8", Math.max(2, size * 0.04)),
       );
-    } else {
+    }
+    if (hasMultiplier) {
+      // 배수 배지 + 무지개 색 확장 링.
+      const mult = options!.multiplier!;
       this.effects.push(
-        new ScorePopup(cx, cy, "+100", Math.max(20, size * 0.5), "#fff7c2", 720),
+        new ScorePopup(cx, cy - size * 0.7, `× ${mult}`, Math.max(22, size * 0.6), "#ec4899", 900),
+      );
+      this.effects.push(
+        new ExpandingRing(cx, cy, size * 2.0, 600, "#ec4899", Math.max(3, size * 0.06)),
       );
     }
 
@@ -361,6 +389,47 @@ export class EffectLayer {
     // 라벨 팝업 — "?" 한 글자, 위로 살짝 떠오름.
     this.effects.push(
       new ScorePopup(cx, cy, "?", Math.max(22, size * 0.55), "#ffffff", 700),
+    );
+  }
+
+  /**
+   * 보너스(×2) 블럭 등장 이펙트 — 무지개 파티클이 셀 외곽에서 중심으로 수렴 + 다중 확장 링.
+   */
+  spawnBonusEntrance(col: number, row: number, layout: CellLayout): void {
+    const size = layout.cellSize;
+    const cx = layout.originX + col * size + size / 2;
+    const cy = layout.originY + row * size + size / 2;
+    const lifeMs = 700;
+    const count = 18;
+    const radius = size * 1.7;
+    const particles: Particle[] = [];
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2 + this.randomFn() * 0.2;
+      const startX = cx + Math.cos(angle) * radius;
+      const startY = cy + Math.sin(angle) * radius;
+      const speed = radius * 1.7;
+      const hue = (i / count) * 360;
+      particles.push({
+        x: startX,
+        y: startY,
+        vx: -Math.cos(angle) * speed,
+        vy: -Math.sin(angle) * speed,
+        life: lifeMs,
+        maxLife: lifeMs,
+        size: 4,
+        color: `hsl(${hue}, 95%, 60%)`,
+      });
+    }
+    this.effects.push(new ParticleBurst(particles));
+    // 두 색 다른 링 — 펄스감.
+    this.effects.push(
+      new ExpandingRing(cx, cy, size * 1.4, 560, "#ec4899", Math.max(3, size * 0.06)),
+    );
+    this.effects.push(
+      new ExpandingRing(cx, cy, size * 1.0, 380, "#fbbf24", Math.max(2, size * 0.05)),
+    );
+    this.effects.push(
+      new ScorePopup(cx, cy, "×2", Math.max(22, size * 0.55), "#ffffff", 750),
     );
   }
 

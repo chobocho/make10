@@ -15,7 +15,8 @@ export type SoundName =
   | "clear"
   | "gameover"
   | "button"
-  | "wild";
+  | "wild"
+  | "bonus";
 
 export interface AudioCtxCtor {
   new (): AudioContext;
@@ -42,6 +43,7 @@ const SOUNDS: Readonly<Record<SoundName, ToneSpec>> = {
   gameover: { freqs: [440, 330, 220], durationMs: 600, type: "sawtooth", gain: 0.3 },
   button: { freqs: [800], durationMs: 50, type: "square", gain: 0.2 },
   wild: { freqs: [660, 880, 1100, 1320], durationMs: 360, type: "sine", gain: 0.32 },
+  bonus: { freqs: [523, 698, 880, 1175, 1397], durationMs: 480, type: "triangle", gain: 0.34 },
 };
 
 function resolveDefaultCtor(): AudioCtxCtor | null {

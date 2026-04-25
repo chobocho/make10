@@ -238,15 +238,15 @@ describe("Board", () => {
     ]);
   });
 
-  test("nonEmptyCells 순회 — value + lives + wild 포함", () => {
+  test("nonEmptyCells 순회 — value + lives + wild + bonus 포함", () => {
     const b = new Board([
       [1, 0],
       [0, 2],
     ]);
     const cells = Array.from(b.nonEmptyCells());
     assertDeepEqual(cells, [
-      { col: 0, row: 0, value: 1, lives: 1, wild: false },
-      { col: 1, row: 1, value: 2, lives: 1, wild: false },
+      { col: 0, row: 0, value: 1, lives: 1, wild: false, bonus: false },
+      { col: 1, row: 1, value: 2, lives: 1, wild: false, bonus: false },
     ]);
   });
 
@@ -810,6 +810,73 @@ describe("Board", () => {
     assertEqual(snap[0][1], true);
     snap[0][0] = true;
     assertFalse(b.isWildcard(0, 0));
+  });
+
+  // ---------- 보너스(×2) 블럭 ----------
+
+  test("bonus: 초기 상태는 모두 false", () => {
+    const b = new Board([[3, 7]]);
+    assertFalse(b.isBonus(0, 0));
+    assertFalse(b.isBonus(1, 0));
+  });
+
+  test("markBonus: 일반 숫자 셀에서 성공, 같은 셀 재마킹은 false", () => {
+    const b = new Board([[3]]);
+    assertTrue(b.markBonus(0, 0));
+    assertTrue(b.isBonus(0, 0));
+    assertFalse(b.markBonus(0, 0)); // 이미 보너스
+  });
+
+  test("markBonus: 빈칸/장애물/만능에서는 실패", () => {
+    const b = new Board(
+      [[0, 0, 0]],
+      undefined,
+      [[0, 1, 0]], // 1: 장애물
+      [[0, 0, 1]], // 2: 만능
+    );
+    assertFalse(b.markBonus(0, 0)); // 빈칸
+    assertFalse(b.markBonus(1, 0)); // 장애물
+    assertFalse(b.markBonus(2, 0)); // 만능
+  });
+
+  test("unmarkBonus: 플래그만 제거, 셀 자체는 유지", () => {
+    const b = new Board([[5]]);
+    b.markBonus(0, 0);
+    b.unmarkBonus(0, 0);
+    assertFalse(b.isBonus(0, 0));
+    assertEqual(b.getCell(0, 0), 5); // grid 보존
+  });
+
+  test("applyMatch: 보너스 셀 파괴 시 bonus 플래그도 false 로 정리", () => {
+    const b = new Board([[3, 7]]);
+    b.markBonus(0, 0);
+    b.applyMatch([
+      [0, 0],
+      [1, 0],
+    ]);
+    assertFalse(b.isBonus(0, 0));
+    assertEqual(b.getCell(0, 0), 0); // 파괴됨
+  });
+
+  test("applyGravity: 보너스 셀이 떨어지면서 bonus 플래그 보존", () => {
+    // 1열 2행: row0=5(보너스), row1=빈칸 → row1 로 떨어져야 함
+    const b = new Board([[5], [0]]);
+    b.markBonus(0, 0);
+    // (0,1)을 비우려고 직접 clearCell — 사실 row1은 이미 0
+    b.applyGravity();
+    assertFalse(b.isBonus(0, 0));
+    assertTrue(b.isBonus(0, 1));
+    assertEqual(b.getCell(0, 1), 5);
+  });
+
+  test("bonusSnapshot: 동일 차원의 boolean 사본", () => {
+    const b = new Board([[1, 2]]);
+    b.markBonus(1, 0);
+    const snap = b.bonusSnapshot();
+    assertEqual(snap[0][0], false);
+    assertEqual(snap[0][1], true);
+    snap[0][0] = true;
+    assertFalse(b.isBonus(0, 0)); // 원본 비변경
   });
 
   test("refill: 새로 채워지는 셀은 항상 lives=1", () => {

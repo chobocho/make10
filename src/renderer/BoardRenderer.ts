@@ -91,6 +91,8 @@ export interface BoardDrawOptions {
   readonly selection?: ReadonlyArray<Position>;
   readonly highlight?: ReadonlyArray<Position> | null;
   readonly invalidSelection?: boolean;
+  /** 무지개 보너스 셀 애니메이션을 위한 단조 진행 시간(ms). 미설정이면 0(정지). */
+  readonly phaseMs?: number;
 }
 
 const COLOR_BG = "#1b222b";
@@ -151,6 +153,7 @@ export class BoardRenderer {
     const selection = options.selection ?? [];
     const highlight = options.highlight ?? null;
     const invalid = options.invalidSelection === true;
+    const phaseMs = options.phaseMs ?? 0;
 
     // 보드 배경
     ctx.fillStyle = COLOR_BG;
@@ -215,6 +218,49 @@ export class BoardRenderer {
         const value = board.getCell(c, r);
         if (value === 0) continue;
         const lives = board.getLives(c, r);
+        const isBonus = board.isBonus(c, r);
+
+        const pad = 2;
+        if (isBonus) {
+          // 무지개 그라데이션 — phaseMs 기준으로 색상 회전 + 사선 방향에 stops 분배.
+          const hueBase = (phaseMs / 18) % 360;
+          const grad = ctx.createLinearGradient(x, y, x + size, y + size);
+          for (let i = 0; i <= 4; i++) {
+            grad.addColorStop(i / 4, `hsl(${(hueBase + i * 90) % 360}, 95%, 60%)`);
+          }
+          ctx.fillStyle = grad;
+          ctx.fillRect(x + pad, y + pad, size - pad * 2, size - pad * 2);
+          // 선택/힌트 색을 보너스 위에 반투명으로 덮어 시각 정합 유지.
+          if (inList(selection, c, r)) {
+            ctx.fillStyle = invalid
+              ? "rgba(255, 135, 135, 0.55)"
+              : "rgba(125, 212, 252, 0.55)";
+            ctx.fillRect(x + pad, y + pad, size - pad * 2, size - pad * 2);
+          } else if (highlight && inList(highlight, c, r)) {
+            ctx.fillStyle = "rgba(255, 214, 102, 0.55)";
+            ctx.fillRect(x + pad, y + pad, size - pad * 2, size - pad * 2);
+          }
+          // 흰 외곽선 + 흰 숫자 + ×2 배지
+          ctx.strokeStyle = "#ffffff";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x + pad + 1, y + pad + 1, size - pad * 2 - 2, size - pad * 2 - 2);
+          ctx.fillStyle = "#ffffff";
+          ctx.fillText(CELL_EMOJIS[value] ?? String(value), x + size / 2, y + size / 2 + 2);
+          // 좌상단 ×2 배지 (밝은 배경에서도 보이게 어두운 그림자)
+          const badgeFont = Math.max(10, Math.floor(size * 0.24));
+          ctx.font = `900 ${badgeFont}px -apple-system, sans-serif`;
+          ctx.textAlign = "left";
+          ctx.textBaseline = "top";
+          ctx.fillStyle = "rgba(20, 25, 40, 0.65)";
+          ctx.fillText("×2", x + 5, y + 4);
+          ctx.fillStyle = "#ffffff";
+          ctx.fillText("×2", x + 4, y + 3);
+          // 폰트/정렬 복원
+          ctx.font = `${fontSize}px -apple-system, "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          continue;
+        }
 
         let fill: string;
         if (inList(selection, c, r)) {
@@ -227,7 +273,6 @@ export class BoardRenderer {
           fill = COLOR_CELL;
         }
 
-        const pad = 2;
         ctx.fillStyle = fill;
         ctx.fillRect(x + pad, y + pad, size - pad * 2, size - pad * 2);
 
