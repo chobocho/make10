@@ -56,6 +56,37 @@ const SCORE_PAIR = 100;
 const SCORE_TRIPLE = 250;
 const DEFAULT_INTRO_MS = 2500;
 
+/** 튜토리얼 슬라이드 — map id=1 첫 진입 시 1회만 노출. */
+const TUTORIAL_SLIDES: ReadonlyArray<{
+  readonly title: string;
+  readonly body: ReadonlyArray<string>;
+}> = [
+  {
+    title: "🎯 합 10 만들기",
+    body: [
+      "인접한 숫자를 드래그해서",
+      "합이 정확히 10이 되도록 만드세요.",
+      "조건이 맞으면 블럭이 사라집니다.",
+    ],
+  },
+  {
+    title: "📏 선택 규칙",
+    body: [
+      "상하좌우 인접 셀만 선택 가능 (대각선 X)",
+      "2개 또는 3개의 셀을 연결",
+      "합은 반드시 정확히 10",
+    ],
+  },
+  {
+    title: "⭐ 점수와 별",
+    body: [
+      "2개 매치 = +100점",
+      "3개 매치 = +250점",
+      "시간 내 ★1 이상이면 클리어!",
+    ],
+  },
+];
+
 export class GameScene implements Scene {
   private readonly context: SceneContext;
   private readonly boardRenderer: BoardRenderer;
@@ -77,6 +108,11 @@ export class GameScene implements Scene {
   private introMsLeft: number;
   private paused: boolean;
   private pauseMenuLayout: ReturnType<typeof computePauseMenuLayout> | null;
+  private tutorialActive: boolean;
+  /** 1..TUTORIAL_SLIDES (활성 시), 0 (비활성). */
+  private tutorialSlide: number;
+  private pressedTutorialSkip: boolean;
+  private tutorialSkipBtn: ButtonRect | null;
 
   constructor(
     context: SceneContext,
@@ -102,6 +138,10 @@ export class GameScene implements Scene {
     this.introMsLeft = 0;
     this.paused = false;
     this.pauseMenuLayout = null;
+    this.tutorialActive = false;
+    this.tutorialSlide = 0;
+    this.pressedTutorialSkip = false;
+    this.tutorialSkipBtn = null;
   }
 
   async enter(args?: unknown): Promise<void> {
@@ -113,7 +153,15 @@ export class GameScene implements Scene {
     this.context.renderer.onResize(() => this.recomputeLayout());
     this.attachVisibilityListener();
     // 세션 복원이면 인트로 없이 즉시 일시정지 메뉴 노출 (이어하기 / 다시하기 / 메인).
-    if (a.resumeFrom) this.pauseGame();
+    if (a.resumeFrom) {
+      this.pauseGame();
+      return;
+    }
+    // map id=1 첫 진입(튜토리얼 미완료) 시 튜토리얼 오버레이를 인트로 앞에 노출.
+    if (a.map.id === 1) {
+      const done = await this.context.saveManager.isTutorialDone();
+      if (!done) this.startTutorial();
+    }
   }
 
   /**
@@ -157,8 +205,37 @@ export class GameScene implements Scene {
     }
   }
 
+  private isInTutorial(): boolean {
+    return this.tutorialActive;
+  }
+
+  private startTutorial(): void {
+    this.tutorialActive = true;
+    this.tutorialSlide = 1;
+    this.pressedTutorialSkip = false;
+  }
+
+  /** 슬라이드 전진. 마지막 슬라이드에서 호출되면 튜토리얼 종료. */
+  private advanceTutorial(): void {
+    if (!this.tutorialActive) return;
+    if (this.tutorialSlide < TUTORIAL_SLIDES.length) {
+      this.tutorialSlide += 1;
+    } else {
+      this.endTutorial();
+    }
+  }
+
+  private endTutorial(): void {
+    if (!this.tutorialActive) return;
+    this.tutorialActive = false;
+    this.tutorialSlide = 0;
+    this.pressedTutorialSkip = false;
+    this.tutorialSkipBtn = null;
+    void this.context.saveManager.markTutorialDone();
+  }
+
   pauseGame(): void {
-    if (this.paused || this.ended || this.isInIntro()) return;
+    if (this.paused || this.ended || this.isInIntro() || this.isInTutorial()) return;
     this.paused = true;
     this.timer?.pause();
     this.selector?.cancel();
@@ -265,6 +342,7 @@ export class GameScene implements Scene {
 
   update(deltaMs: number): void {
     if (this.ended) return;
+    if (this.isInTutorial()) return; // 튜토리얼 중에는 시간/인트로 진행 모두 정지
     if (this.isInIntro()) {
       this.introMsLeft -= deltaMs;
       if (this.introMsLeft <= 0) {
@@ -302,7 +380,8 @@ export class GameScene implements Scene {
       highlighting: this.hint.isHighlighting(),
       paused: this.paused,
     });
-    if (this.isInIntro()) this.drawIntroOverlay();
+    if (this.isInTutorial()) this.drawTutorialOverlay();
+    else if (this.isInIntro()) this.drawIntroOverlay();
     else if (this.paused) this.drawPauseOverlay();
   }
 
@@ -359,6 +438,88 @@ export class GameScene implements Scene {
     return null;
   }
 
+  private drawTutorialOverlay(): void {
+    const ctx = this.context.renderer.getCtx();
+    const { width, height } = this.context.renderer.getSize();
+    // 반투명 배경
+    ctx.fillStyle = "rgba(16, 24, 32, 0.92)";
+    ctx.fillRect(0, 0, width, height);
+
+    const slideIdx = Math.max(1, Math.min(TUTORIAL_SLIDES.length, this.tutorialSlide));
+    const slide = TUTORIAL_SLIDES[slideIdx - 1];
+    const isLast = slideIdx === TUTORIAL_SLIDES.length;
+
+    const minDim = Math.min(width, height);
+    const titleFont = Math.round(minDim * 0.06);
+    const bodyFont = Math.round(minDim * 0.04);
+    const footerFont = Math.round(minDim * 0.032);
+    const indicatorFont = Math.round(minDim * 0.03);
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    const cx = width / 2;
+    let y = height * 0.28;
+
+    // 제목
+    ctx.fillStyle = "#e0e6ee";
+    ctx.font = `bold ${titleFont}px -apple-system, "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
+    ctx.fillText(slide.title, cx, y);
+
+    // 본문
+    y += titleFont * 1.4;
+    ctx.fillStyle = "#cdd5df";
+    ctx.font = `${bodyFont}px -apple-system, sans-serif`;
+    const lineGap = Math.round(bodyFont * 1.6);
+    for (const line of slide.body) {
+      ctx.fillText(line, cx, y);
+      y += lineGap;
+    }
+
+    // 페이지 인디케이터 (●○○ 형식)
+    y += lineGap * 0.6;
+    ctx.font = `${indicatorFont}px -apple-system, sans-serif`;
+    ctx.fillStyle = "#7f8ea0";
+    let indicator = "";
+    for (let i = 1; i <= TUTORIAL_SLIDES.length; i++) {
+      indicator += i === slideIdx ? "●" : "○";
+      if (i < TUTORIAL_SLIDES.length) indicator += " ";
+    }
+    ctx.fillText(indicator, cx, y);
+
+    // 하단 안내
+    y += lineGap * 1.2;
+    ctx.fillStyle = "#a3b3c2";
+    ctx.font = `${footerFont}px -apple-system, sans-serif`;
+    ctx.fillText(isLast ? "탭해서 시작" : "탭해서 다음", cx, y);
+
+    // 우상단 "건너뛰기" 버튼
+    const skipPadX = Math.round(minDim * 0.04);
+    const skipPadY = Math.round(minDim * 0.025);
+    const skipFont = Math.round(minDim * 0.034);
+    ctx.font = `600 ${skipFont}px -apple-system, sans-serif`;
+    const label = "건너뛰기";
+    const labelW = Math.round(skipFont * label.length * 0.7);
+    const btnW = labelW + skipPadX * 2;
+    const btnH = Math.round(skipFont * 1.8);
+    const btnX = width - btnW - Math.round(minDim * 0.03);
+    const btnY = Math.round(minDim * 0.03);
+    this.tutorialSkipBtn = { x: btnX, y: btnY, width: btnW, height: btnH };
+
+    const pressed = this.pressedTutorialSkip;
+    ctx.fillStyle = pressed ? "#4c566a" : "#3b4252";
+    ctx.fillRect(btnX, btnY, btnW, btnH);
+    ctx.strokeStyle = "#5d6872";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(btnX + 0.5, btnY + 0.5, btnW - 1, btnH - 1);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#eceff4";
+    ctx.fillText(label, btnX + btnW / 2, btnY + btnH / 2 + Math.round(skipPadY * 0.1));
+
+    void skipPadY;
+  }
+
   private drawIntroOverlay(): void {
     if (!this.map) return;
     const ctx = this.context.renderer.getCtx();
@@ -408,6 +569,13 @@ export class GameScene implements Scene {
 
   onPointerDown(x: number, y: number): void {
     if (this.ended || !this.selector || !this.hint) return;
+    if (this.isInTutorial()) {
+      // 건너뛰기 버튼 press → release 인 바운스용으로 마킹.
+      if (this.tutorialSkipBtn && hitButton(this.tutorialSkipBtn, x, y)) {
+        this.pressedTutorialSkip = true;
+      }
+      return;
+    }
     if (this.isInIntro()) {
       this.dismissIntro();
       return;
@@ -436,6 +604,7 @@ export class GameScene implements Scene {
   onPointerMove(x: number, y: number): void {
     if (
       this.ended ||
+      this.isInTutorial() ||
       this.isInIntro() ||
       this.paused ||
       !this.selector ||
@@ -452,6 +621,22 @@ export class GameScene implements Scene {
 
   onPointerUp(x: number = Number.NaN, y: number = Number.NaN): void {
     if (this.ended) return;
+
+    // 튜토리얼 중: 건너뛰기 버튼 인 바운스 → 즉시 종료, 아니면 슬라이드 전진.
+    if (this.isInTutorial()) {
+      if (this.pressedTutorialSkip) {
+        this.pressedTutorialSkip = false;
+        const hit =
+          !Number.isFinite(x) || !Number.isFinite(y)
+            ? true
+            : this.tutorialSkipBtn !== null && hitButton(this.tutorialSkipBtn, x, y);
+        if (hit) this.endTutorial();
+        return;
+      }
+      // 일반 영역 탭 → 다음 슬라이드 또는 종료
+      this.advanceTutorial();
+      return;
+    }
 
     // 일시정지 버튼 press → release 인 바운스
     if (this.pressedPauseBtn) {
@@ -515,6 +700,7 @@ export class GameScene implements Scene {
     this.pressedHintBtn = false;
     this.pressedPauseBtn = false;
     this.pressedPauseMenuBtn = null;
+    this.pressedTutorialSkip = false;
     this.selector?.cancel();
   }
 
@@ -566,6 +752,15 @@ export class GameScene implements Scene {
   }
   _isCleared(): boolean {
     return this.board?.isCleared() ?? false;
+  }
+  _isInTutorial(): boolean {
+    return this.isInTutorial();
+  }
+  _getTutorialSlide(): number {
+    return this.tutorialSlide;
+  }
+  _getTutorialSkipBtn(): ButtonRect | null {
+    return this.tutorialSkipBtn;
   }
 }
 

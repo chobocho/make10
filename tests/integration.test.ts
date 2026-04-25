@@ -17,7 +17,7 @@ import { GameScene, GameResult } from "../src/scenes/GameScene";
 import { ResultScene } from "../src/scenes/ResultScene";
 import { CanvasRenderer } from "../src/renderer/CanvasRenderer";
 import { AudioManager, SoundName } from "../src/audio/AudioManager";
-import { SaveManager, MemoryProgressStore } from "../src/storage/SaveManager";
+import { SaveManager, MemoryProgressStore, MemoryMetaStore } from "../src/storage/SaveManager";
 import type { MapData } from "../src/data/MapLoader";
 import {
   computeMapGridLayout,
@@ -110,9 +110,14 @@ function buildContext(mapProvider: (id: number) => MapData = (id) => pairTiledFi
   (audio as unknown as { play: (n: SoundName) => void }).play = (n) =>
     audioCalls.push(n);
   (audio as unknown as { ensureReady: () => void }).ensureReady = () => {};
+  const metaStore = new MemoryMetaStore();
+  // 통합 테스트의 GameScene 진입에서 튜토리얼 흐름이 끼지 않도록 사전 시딩(동기).
+  // MemoryMetaStore 내부 Map 에 직접 키 삽입 — async API 의 microtask race 회피.
+  (metaStore as unknown as { map: Map<string, unknown> }).map.set("tutorial_done", true);
   const saveManager = new SaveManager(
     new MemoryProgressStore(),
     new MemoryProgressStore(), // 세션 스토어 주입 — 멀티라이프 세션 복원 테스트 용도
+    metaStore,
   );
   const fsm = new FSM();
 
@@ -192,9 +197,8 @@ describe("Integration: Title → Game → Result", () => {
     const firstBtn = grid.buttons[0];
     fsm.onPointerDown(firstBtn.x + firstBtn.width / 2, firstBtn.y + firstBtn.height / 2);
     fsm.onPointerUp(firstBtn.x + firstBtn.width / 2, firstBtn.y + firstBtn.height / 2);
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    // GameScene.enter 가 isTutorialDone 을 await 하므로 충분히 마이크로태스크 드레인
+    for (let i = 0; i < 8; i++) await Promise.resolve();
     assertEqual(fsm.getCurrentId(), "game");
 
     // 한 번 매치 (리필로 보드는 가득 유지)

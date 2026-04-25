@@ -51,13 +51,17 @@ export class MemoryProgressStore implements ProgressStore {
   }
 }
 
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_PROGRESS = "progress";
 const STORE_SESSION = "session";
+const STORE_META = "meta";
 
 /**
- * 공유 DB 오픈. 두 스토어(progress/session)를 동일 DB 인스턴스에서 관리하기 위한 단일 진입점.
- * 버전 2로 업그레이드하며 누락된 스토어를 생성한다(이미 존재하면 그대로 둠 → 기존 progress 데이터 보존).
+ * 공유 DB 오픈. 세 스토어(progress/session/meta)를 동일 DB 인스턴스에서 관리하기 위한 단일 진입점.
+ * 누락된 스토어만 생성하므로 기존 데이터는 보존된다.
+ *   - v1 → 최초 progress 스토어 생성
+ *   - v2 → session 스토어 추가
+ *   - v3 → meta 스토어 추가 (튜토리얼 완료 등 키-값 메타)
  */
 function openMake10Db(factory: IDBFactory, dbName: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -69,6 +73,9 @@ function openMake10Db(factory: IDBFactory, dbName: string): Promise<IDBDatabase>
       }
       if (!db.objectStoreNames.contains(STORE_SESSION)) {
         db.createObjectStore(STORE_SESSION, { keyPath: "mapId" });
+      }
+      if (!db.objectStoreNames.contains(STORE_META)) {
+        db.createObjectStore(STORE_META, { keyPath: "key" });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -152,16 +159,100 @@ export class IndexedDbProgressStore implements ProgressStore {
   }
 }
 
+/**
+ * 키-값 메타 스토어 — 게임 단일 인스턴스 단위의 영속 플래그/설정 저장소.
+ * progress(맵별)·session(맵별 진행상태)과 별개의 도메인.
+ */
+export interface MetaStore {
+  set(key: string, value: unknown): Promise<void>;
+  get(key: string): Promise<unknown>;
+  delete(key: string): Promise<void>;
+}
+
+export class MemoryMetaStore implements MetaStore {
+  private readonly map: Map<string, unknown> = new Map();
+
+  async set(key: string, value: unknown): Promise<void> {
+    this.map.set(key, value);
+  }
+
+  async get(key: string): Promise<unknown> {
+    return this.map.has(key) ? this.map.get(key) : null;
+  }
+
+  async delete(key: string): Promise<void> {
+    this.map.delete(key);
+  }
+}
+
+export class IndexedDbMetaStore implements MetaStore {
+  private readonly factory: IDBFactory;
+  private readonly dbName: string;
+  private dbPromise: Promise<IDBDatabase> | null;
+
+  constructor(factory: IDBFactory, dbName: string = "make10db") {
+    this.factory = factory;
+    this.dbName = dbName;
+    this.dbPromise = null;
+  }
+
+  private openDb(): Promise<IDBDatabase> {
+    if (this.dbPromise) return this.dbPromise;
+    this.dbPromise = openMake10Db(this.factory, this.dbName);
+    return this.dbPromise;
+  }
+
+  async set(key: string, value: unknown): Promise<void> {
+    const db = await this.openDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_META, "readwrite");
+      tx.objectStore(STORE_META).put({ key, value, updatedAt: Date.now() });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  }
+
+  async get(key: string): Promise<unknown> {
+    const db = await this.openDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_META, "readonly");
+      const req = tx.objectStore(STORE_META).get(key);
+      req.onsuccess = () => {
+        const v = req.result as { key: string; value: unknown } | undefined;
+        resolve(v ? v.value : null);
+      };
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async delete(key: string): Promise<void> {
+    const db = await this.openDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_META, "readwrite");
+      tx.objectStore(STORE_META).delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  }
+}
+
+const META_KEY_TUTORIAL_DONE = "tutorial_done";
+
 export class SaveManager {
   private readonly store: ProgressStore | null;
   private readonly sessionStore: ProgressStore | null;
+  private readonly metaStore: MetaStore | null;
 
   constructor(
     store: ProgressStore | null,
     sessionStore: ProgressStore | null = null,
+    metaStore: MetaStore | null = null,
   ) {
     this.store = store;
     this.sessionStore = sessionStore;
+    this.metaStore = metaStore;
   }
 
   isAvailable(): boolean {
@@ -264,6 +355,39 @@ export class SaveManager {
       return [];
     }
   }
+
+  // --- 메타 (튜토리얼 등) API ---
+
+  async markTutorialDone(): Promise<boolean> {
+    if (!this.metaStore) return false;
+    try {
+      await this.metaStore.set(META_KEY_TUTORIAL_DONE, true);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async isTutorialDone(): Promise<boolean> {
+    if (!this.metaStore) return false;
+    try {
+      const v = await this.metaStore.get(META_KEY_TUTORIAL_DONE);
+      return v === true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** 테스트/디버그 용 — 튜토리얼 완료 마크를 제거해 다시 표시되게 한다. */
+  async resetTutorial(): Promise<boolean> {
+    if (!this.metaStore) return false;
+    try {
+      await this.metaStore.delete(META_KEY_TUTORIAL_DONE);
+      return true;
+    } catch {
+      return false;
+    }
+  }
 }
 
 /**
@@ -272,7 +396,7 @@ export class SaveManager {
  */
 export function createDefaultSaveManager(): SaveManager {
   const g = globalThis as unknown as { indexedDB?: IDBFactory };
-  if (!g.indexedDB) return new SaveManager(null, null);
+  if (!g.indexedDB) return new SaveManager(null, null, null);
   try {
     const progress = new IndexedDbProgressStore(g.indexedDB, {
       storeName: STORE_PROGRESS,
@@ -280,8 +404,9 @@ export function createDefaultSaveManager(): SaveManager {
     const session = new IndexedDbProgressStore(g.indexedDB, {
       storeName: STORE_SESSION,
     });
-    return new SaveManager(progress, session);
+    const meta = new IndexedDbMetaStore(g.indexedDB);
+    return new SaveManager(progress, session, meta);
   } catch {
-    return new SaveManager(null, null);
+    return new SaveManager(null, null, null);
   }
 }

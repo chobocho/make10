@@ -261,6 +261,26 @@
     - 가시 영역 밖 버튼은 컬링으로 생략.
 - 테스트 4건 추가 (100 맵 시 maxScrollY>0, 드래그 스크롤로 탭 취소, 미세 이동은 탭 유지, 스크롤 후 탭 정확히 히트). 누적 **177/177 pass**.
 
+## 2026-04-25 — 1판 튜토리얼 모드 + 메타 영속 저장
+
+**요청**: 첫 맵에서 게임 방법을 안내하는 튜토리얼이 노출되어야 하고, 한 번 보면 DB에 기록해 다시 안 보여야 한다.
+
+**구현**:
+- **저장 계층**: IndexedDB `make10db` 에 `meta` 스토어 신설 (DB v2→v3, 누락된 스토어만 생성하므로 기존 progress/session 데이터 보존). 키-값 영속.
+- **MetaStore 인터페이스** + `MemoryMetaStore` (테스트) + `IndexedDbMetaStore` (실제). `SaveManager` 생성자에 세 번째 인자로 주입.
+- **SaveManager API**: `markTutorialDone()`, `isTutorialDone()`, `resetTutorial()` (테스트/디버그). 모두 metaStore 미주입 시 false 폴백.
+- **튜토리얼 흐름** (GameScene):
+  - `enter`에서 `mapId === 1` 이고 `isTutorialDone === false` 일 때만 `startTutorial()`.
+  - 3개 슬라이드 (목표 / 선택 규칙 / 점수와 별), 탭으로 전진, 마지막 슬라이드 탭 시 종료.
+  - 우상단 "건너뛰기" 버튼 (press+release 인 바운스). 종료 시 자동으로 `markTutorialDone()` 호출.
+  - 튜토리얼 활성 중에는 `update`/`pauseGame`/`onPointerMove` 등 모든 게임 입력 차단. 인트로 오버레이도 가려진 상태로 대기.
+  - 튜토리얼 종료 → 기존 인트로(맵별 ★ 임계값) → 게임 시작 흐름.
+- **테스트 (252/252 pass)**:
+  - `saveManager.test.ts` 4건 — 메타 기본값/마킹/리셋/폴백.
+  - `gameScene.test.ts` 9건 — 튜토리얼 트리거 조건 / 슬라이드 전진 / 건너뛰기 / press-out / pause·update 차단 / 보드 입력 차단 / 영속성.
+  - `integration.test.ts` `buildContext`에 MetaStore 주입 + 튜토리얼 사전 시딩(동기 Map 접근으로 microtask race 회피).
+  - 기존 GameScene 테스트 중 `id: 1` 인라인 맵 2개를 `id: 2` 로 조정.
+
 ## 2026-04-25 — 멀티라이프 블럭 도입 (id ≥ 10)
 
 **규칙**: id 10부터 보드 일부 셀이 lives 2~5의 멀티라이프 블럭이 되어, 매치마다 lives -1 되고 0이 되어야 제거된다. 색맹 접근성을 고려해 파랑 단색조 명도 그라데이션 + 좌상단 lives 배지로 표시.

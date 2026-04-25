@@ -15,6 +15,7 @@ import { AudioManager, SoundName } from "../src/audio/AudioManager";
 import {
   SaveManager,
   MemoryProgressStore,
+  MemoryMetaStore,
   ProgressRecord,
 } from "../src/storage/SaveManager";
 import type { MapData } from "../src/data/MapLoader";
@@ -68,6 +69,7 @@ function makeCtx(renderer: CanvasRenderer): {
   const saveManager = new SaveManager(
     new MemoryProgressStore(),
     new MemoryProgressStore(),
+    new MemoryMetaStore(),
   );
   const context: SceneContext = {
     renderer,
@@ -401,7 +403,7 @@ describe("GameScene", () => {
     // RNG=0 → 리필은 1로 채움 (1 + floor(0*9) = 1).
     const scene = new GameScene(context, () => 0, 0);
     const map: MapData = {
-      id: 1,
+      id: 2, // 튜토리얼 트리거 회피용 (id=1 은 첫 진입 시 튜토리얼 노출)
       name: "gravity-test",
       cols: 2,
       rows: 3,
@@ -441,7 +443,7 @@ describe("GameScene", () => {
     const scene = new GameScene(context, () => 0, 0);
     await scene.enter({
       map: {
-        id: 1,
+        id: 2,
         name: "stuck",
         cols: 2,
         rows: 2,
@@ -738,6 +740,145 @@ describe("GameScene", () => {
     assertTrue(rec!.boardLives !== undefined);
     assertEqual(rec!.boardLives![0][0], 3);
     assertEqual(rec!.boardLives![0][1], 2);
+  });
+
+  // ---------- 튜토리얼 ----------
+
+  test("튜토리얼: mapId=1 + 미완료 → 튜토리얼 활성, 슬라이드 1로 시작", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 2500);
+    await scene.enter({
+      map: { ...tinyMap(), id: 1 },
+    });
+    assertTrue(scene._isInTutorial());
+    assertEqual(scene._getTutorialSlide(), 1);
+    // 인트로/타이머는 튜토리얼이 가려서 진행 안 됨
+    const timer = (scene as unknown as { timer: { isRunning(): boolean } }).timer;
+    assertFalse(timer.isRunning());
+  });
+
+  test("튜토리얼: 튜토리얼 완료 기록 있으면 mapId=1 도 튜토리얼 미노출", async () => {
+    const r = makeFakeRenderer();
+    const { context, saveManager } = makeCtx(r);
+    await saveManager.markTutorialDone();
+    const scene = new GameScene(context, Math.random, 2500);
+    await scene.enter({ map: { ...tinyMap(), id: 1 } });
+    assertFalse(scene._isInTutorial());
+  });
+
+  test("튜토리얼: mapId !== 1 은 항상 미노출", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 2500);
+    await scene.enter({ map: { ...tinyMap(), id: 2 } });
+    assertFalse(scene._isInTutorial());
+  });
+
+  test("튜토리얼: 탭으로 슬라이드 1→2→3→종료(완료 마킹 + 인트로 진입)", async () => {
+    const r = makeFakeRenderer();
+    const { context, saveManager } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 2500);
+    await scene.enter({ map: { ...tinyMap(), id: 1 } });
+    scene.render();
+    assertEqual(scene._getTutorialSlide(), 1);
+    // 화면 중앙 탭(스킵 버튼 밖)
+    scene.onPointerDown!(50, 400);
+    scene.onPointerUp!(50, 400);
+    assertEqual(scene._getTutorialSlide(), 2);
+    scene.onPointerDown!(50, 400);
+    scene.onPointerUp!(50, 400);
+    assertEqual(scene._getTutorialSlide(), 3);
+    scene.onPointerDown!(50, 400);
+    scene.onPointerUp!(50, 400);
+    // 마지막 탭 → 종료
+    assertFalse(scene._isInTutorial());
+    // 인트로는 정상 노출 (인트로 시간 그대로)
+    assertTrue(scene._isInIntro());
+    // 완료 마킹 (마이크로태스크 정착 대기)
+    await Promise.resolve();
+    assertTrue(await saveManager.isTutorialDone());
+  });
+
+  test("튜토리얼: 건너뛰기 버튼 → 즉시 종료 + 완료 마킹", async () => {
+    const r = makeFakeRenderer();
+    const { context, saveManager } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 2500);
+    await scene.enter({ map: { ...tinyMap(), id: 1 } });
+    scene.render(); // 스킵 버튼 레이아웃 계산
+    const btn = scene._getTutorialSkipBtn();
+    assertTrue(btn !== null);
+    const cx = btn!.x + btn!.width / 2;
+    const cy = btn!.y + btn!.height / 2;
+    scene.onPointerDown!(cx, cy);
+    scene.onPointerUp!(cx, cy);
+    assertFalse(scene._isInTutorial());
+    await Promise.resolve();
+    assertTrue(await saveManager.isTutorialDone());
+  });
+
+  test("튜토리얼: 건너뛰기 press 후 밖에서 release → 종료 안 됨", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 2500);
+    await scene.enter({ map: { ...tinyMap(), id: 1 } });
+    scene.render();
+    const btn = scene._getTutorialSkipBtn();
+    assertTrue(btn !== null);
+    scene.onPointerDown!(btn!.x + 1, btn!.y + 1);
+    // 다른 영역에서 release
+    scene.onPointerUp!(0, 9999);
+    assertTrue(scene._isInTutorial());
+  });
+
+  test("튜토리얼 중: pauseGame 요청 무시 (visibility hidden 등)", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 2500);
+    await scene.enter({ map: { ...tinyMap(), id: 1 } });
+    scene.pauseGame();
+    assertFalse(scene.isPaused());
+  });
+
+  test("튜토리얼 중: update 가 timer/intro 진행시키지 않음", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 2500);
+    await scene.enter({ map: { ...tinyMap(), id: 1 } });
+    scene.update(5000);
+    // intro 시간이 그대로(0이 아님) — 튜토리얼이 막아서 줄지 않음
+    assertTrue(scene._isInTutorial());
+    assertTrue(scene._isInIntro());
+  });
+
+  test("튜토리얼 중: 보드 영역 드래그 입력 무시 (선택 시작 안 됨)", async () => {
+    const r = makeFakeRenderer();
+    const { context, audioCalls } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 0);
+    await scene.enter({ map: { ...tinyMap(), id: 1 } });
+    scene.render();
+    // 보드 셀 위치를 클릭해도 select 사운드가 나면 안 됨
+    const layout = (scene as unknown as { boardRenderer: { getLayout(): any } }).boardRenderer.getLayout();
+    scene.onPointerDown!(layout.originX + layout.cellSize / 2, layout.originY + layout.cellSize / 2);
+    assertFalse(audioCalls.includes("select"));
+  });
+
+  test("튜토리얼 완료 → mapId=1 재진입 시 미노출 (DB 영속성)", async () => {
+    const r = makeFakeRenderer();
+    const { context, saveManager } = makeCtx(r);
+    const scene1 = new GameScene(context, Math.random, 2500);
+    await scene1.enter({ map: { ...tinyMap(), id: 1 } });
+    scene1.render();
+    // 건너뛰기로 완료
+    const btn = scene1._getTutorialSkipBtn();
+    scene1.onPointerDown!(btn!.x + 1, btn!.y + 1);
+    scene1.onPointerUp!(btn!.x + 1, btn!.y + 1);
+    await Promise.resolve();
+    assertTrue(await saveManager.isTutorialDone());
+    // 같은 saveManager로 새 GameScene 진입
+    const scene2 = new GameScene(context, Math.random, 2500);
+    await scene2.enter({ map: { ...tinyMap(), id: 1 } });
+    assertFalse(scene2._isInTutorial());
   });
 
   test("무효 선택 시 invalid 사운드", async () => {

@@ -8,6 +8,7 @@ import {
 } from "./runner";
 import {
   MemoryProgressStore,
+  MemoryMetaStore,
   SaveManager,
   ProgressStore,
   ProgressRecord,
@@ -177,6 +178,43 @@ describe("SaveManager (메모리 스토어 사용)", () => {
     assertEqual(await sm.loadSession(1), null);
     assertFalse(await sm.clearSession(1));
     assertDeepEqual(await sm.listSessions(), []);
+  });
+
+  test("메타: 튜토리얼 미완료 상태가 기본값", async () => {
+    const sm = new SaveManager(
+      new MemoryProgressStore(),
+      new MemoryProgressStore(),
+      new MemoryMetaStore(),
+    );
+    assertFalse(await sm.isTutorialDone());
+  });
+
+  test("메타: markTutorialDone 후 isTutorialDone=true", async () => {
+    const sm = new SaveManager(
+      new MemoryProgressStore(),
+      new MemoryProgressStore(),
+      new MemoryMetaStore(),
+    );
+    assertTrue(await sm.markTutorialDone());
+    assertTrue(await sm.isTutorialDone());
+  });
+
+  test("메타: resetTutorial 후 다시 미완료", async () => {
+    const sm = new SaveManager(
+      new MemoryProgressStore(),
+      new MemoryProgressStore(),
+      new MemoryMetaStore(),
+    );
+    await sm.markTutorialDone();
+    await sm.resetTutorial();
+    assertFalse(await sm.isTutorialDone());
+  });
+
+  test("메타: metaStore 미주입 시 모두 false 폴백", async () => {
+    const sm = new SaveManager(new MemoryProgressStore()); // meta=null
+    assertFalse(await sm.markTutorialDone());
+    assertFalse(await sm.isTutorialDone());
+    assertFalse(await sm.resetTutorial());
   });
 
   test("스토어 내부 오류는 false/null로 삼킴 (게임 계속)", async () => {
