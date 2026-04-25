@@ -207,7 +207,7 @@ export class EffectLayer {
    * 제거된 셀들에 대해 파티클 폭발 + 점수 팝업(+ 3셀이면 링)을 생성.
    * @param cells 제거된 셀 좌표 (col, row). 비어있으면 점수 팝업도 생성하지 않는다.
    * @param layout 보드 셀의 화면 좌표 변환 정보.
-   * @param kind  매치 종류 — "pair" (2셀, +100) 또는 "triple" (3셀, +250).
+   * @param kind  매치 종류 — "pair" (2셀, +100) 또는 "triple" (3셀, +400).
    */
   spawnRemoval(
     cells: ReadonlyArray<readonly [number, number]>,
@@ -258,7 +258,7 @@ export class EffectLayer {
     const cy = sumY / cells.length;
     if (isTriple) {
       this.effects.push(
-        new ScorePopup(cx, cy, "+250", Math.max(28, size * 0.7), "#ffd166", 950),
+        new ScorePopup(cx, cy, "+400", Math.max(28, size * 0.7), "#ffd166", 950),
       );
       this.effects.push(
         new ExpandingRing(cx, cy, size * 1.8, 520, "#ffd166", Math.max(3, size * 0.06)),

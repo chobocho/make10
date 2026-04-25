@@ -55,7 +55,7 @@ export interface GameResult {
 }
 
 const SCORE_PAIR = 100;
-const SCORE_TRIPLE = 250;
+const SCORE_TRIPLE = 400;
 const DEFAULT_INTRO_MS = 2500;
 
 export class GameScene implements Scene {

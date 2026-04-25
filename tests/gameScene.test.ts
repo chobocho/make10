@@ -1102,6 +1102,50 @@ describe("GameScene + 매치 이펙트", () => {
     assertTrue(effects.hasActive());
   });
 
+  test("점수: 2셀 +100 / 3셀 +400 (3셀이 동수의 2셀 매치보다 우월)", async () => {
+    // 2셀 매치 한 번
+    const r1 = makeFakeRenderer();
+    const { context: ctx1 } = makeCtx(r1);
+    const sceneP = new GameScene(ctx1, () => 0, 0);
+    await sceneP.enter({ map: tinyMap() });
+    sceneP.render();
+    const lP = (sceneP as unknown as {
+      boardRenderer: { getLayout(): { originX: number; originY: number; cellSize: number } };
+    }).boardRenderer.getLayout();
+    sceneP.onPointerDown!(lP.originX + lP.cellSize / 2, lP.originY + lP.cellSize / 2);
+    sceneP.onPointerMove!(lP.originX + lP.cellSize * 1.5, lP.originY + lP.cellSize / 2);
+    sceneP.onPointerUp!(lP.originX + lP.cellSize * 1.5, lP.originY + lP.cellSize / 2);
+    assertEqual(sceneP._getScore(), 100);
+
+    // 3셀 매치 한 번
+    const tripleMap: MapData = {
+      id: 11,
+      name: "tri",
+      cols: 3,
+      rows: 1,
+      timeLimit: 60,
+      hintCount: 0,
+      targetScore: 0,
+      starThresholds: [50, 150, 300],
+      initialBoard: [[1, 2, 7]],
+    };
+    const r2 = makeFakeRenderer();
+    const { context: ctx2 } = makeCtx(r2);
+    const sceneT = new GameScene(ctx2, () => 0, 0);
+    await sceneT.enter({ map: tripleMap });
+    sceneT.render();
+    const lT = (sceneT as unknown as {
+      boardRenderer: { getLayout(): { originX: number; originY: number; cellSize: number } };
+    }).boardRenderer.getLayout();
+    sceneT.onPointerDown!(lT.originX + lT.cellSize / 2, lT.originY + lT.cellSize / 2);
+    sceneT.onPointerMove!(lT.originX + lT.cellSize * 1.5, lT.originY + lT.cellSize / 2);
+    sceneT.onPointerMove!(lT.originX + lT.cellSize * 2.5, lT.originY + lT.cellSize / 2);
+    sceneT.onPointerUp!(lT.originX + lT.cellSize * 2.5, lT.originY + lT.cellSize / 2);
+    assertEqual(sceneT._getScore(), 400);
+    // 명시적 우월성: 3셀 한 번 > 2셀 두 번
+    assertTrue(sceneT._getScore() > 2 * sceneP._getScore());
+  });
+
   test("3셀 매치: pair 보다 더 많은 이펙트가 동시 활성", async () => {
     const tripleMap: MapData = {
       id: 11,
