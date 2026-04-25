@@ -4,6 +4,9 @@
  * 게임 규칙:
  *   - 셀 값 0은 빈 칸(제거됨). 1~9만 유효한 값이다.
  *   - 셀 lives: 0=빈 칸, 1=일반(매치 즉시 제거), 2~5=멀티라이프(매치마다 lives -1, 0이면 제거).
+ *   - obstacle: 파괴 불가의 고정 장애물. grid=0, lives=0, obstacle=true 로 표현.
+ *     선택 대상이 아니며(grid=0), 중력의 영향을 받지 않고 제자리에 머무른다.
+ *     장애물 위쪽의 블럭이 떨어질 때는 장애물을 "통과"하여 아래쪽 빈 칸으로 쌓인다.
  *   - 제거 후 중력 적용 + 빈 칸 리필로 보드는 항상 가득 찬 상태를 유지.
  *
  * 좌표 규약: (col, row) — 첫 번째가 x(열), 두 번째가 y(행).
@@ -17,14 +20,17 @@ export const MAX_LIFE = 5;
 export class Board {
   private readonly cols: number;
   private readonly rows: number;
-  /** grid[row][col] — 셀의 face value (0=빈칸, 1~9). */
+  /** grid[row][col] — 셀의 face value (0=빈칸, 1~9). 장애물 셀도 0. */
   private readonly grid: Cell[][];
-  /** lives[row][col] — 잔여 lives (0=빈칸, 1=일반, 2~5=멀티라이프). */
+  /** lives[row][col] — 잔여 lives (0=빈칸/장애물, 1=일반, 2~5=멀티라이프). */
   private readonly lives: number[][];
+  /** obstacle[row][col] — 파괴 불가 장애물 여부. true면 grid=0, lives=0이어야 함. */
+  private readonly obstacles: boolean[][];
 
   constructor(
     initial: ReadonlyArray<ReadonlyArray<Cell>>,
     initialLives?: ReadonlyArray<ReadonlyArray<number>>,
+    initialObstacles?: ReadonlyArray<ReadonlyArray<boolean | number>>,
   ) {
     if (initial.length === 0) {
       throw new Error("Board: 최소 1행이 필요합니다.");
@@ -83,6 +89,38 @@ export class Board {
       // 기본: 비빈칸은 lives=1, 빈칸은 lives=0.
       this.lives = this.grid.map((row) => row.map((v) => (v === 0 ? 0 : 1)));
     }
+
+    // obstacles — 장애물 셀은 반드시 grid=0, lives=0이어야 함.
+    if (initialObstacles) {
+      if (initialObstacles.length !== rows) {
+        throw new Error(
+          `Board: initialObstacles 행 수 불일치 (기준 ${rows}, ${initialObstacles.length}).`,
+        );
+      }
+      const out: boolean[][] = [];
+      for (let r = 0; r < rows; r++) {
+        const or = initialObstacles[r];
+        if (!Array.isArray(or) || or.length !== cols) {
+          throw new Error(`Board: initialObstacles row ${r} 열 수 불일치.`);
+        }
+        const row: boolean[] = new Array(cols);
+        for (let c = 0; c < cols; c++) {
+          const ov = or[c];
+          const flag = ov === true || ov === 1;
+          if (flag) {
+            if (this.grid[r][c] !== 0) {
+              throw new Error(`Board: 장애물 셀에 값 ${this.grid[r][c]} @ (${c},${r}).`);
+            }
+            this.lives[r][c] = 0;
+          }
+          row[c] = flag;
+        }
+        out.push(row);
+      }
+      this.obstacles = out;
+    } else {
+      this.obstacles = this.grid.map((row) => row.map(() => false));
+    }
   }
 
   getCols(): number {
@@ -113,6 +151,13 @@ export class Board {
 
   isEmpty(col: number, row: number): boolean {
     return this.getCell(col, row) === 0;
+  }
+
+  isObstacle(col: number, row: number): boolean {
+    if (!this.inBounds(col, row)) {
+      throw new RangeError(`Board.isObstacle: 경계 밖 (${col},${row}).`);
+    }
+    return this.obstacles[row][col];
   }
 
   /** 셀을 즉시 비운다(테스트/레거시 용). lives도 0으로 동기화. */
@@ -183,6 +228,7 @@ export class Board {
     let filled = 0;
     for (let r = 0; r < this.rows; r++) {
       for (let c = 0; c < this.cols; c++) {
+        if (this.obstacles[r][c]) continue; // 장애물은 건드리지 않음
         if (this.grid[r][c] === 0) {
           this.grid[r][c] = 1 + Math.floor(randomFn() * 9);
           this.lives[r][c] = 1;
@@ -194,33 +240,45 @@ export class Board {
   }
 
   /**
-   * 중력 적용 — 각 열에서 위에 있던 비어있지 않은 셀이 아래의 빈 칸을 채우며 낙하한다.
-   * (Bejeweled 스타일: 셀이 위에서 아래로 떨어진다.) lives도 함께 이동한다.
-   * 상대적 순서는 유지된다. 외부 상태(선택/힌트)는 호출자가 재설정해야 한다.
+   * 중력 적용 — 각 열에서 비어있지 않은 셀이 아래로 떨어진다 (Bejeweled 스타일).
+   * 장애물은 고정되어 움직이지 않고, 위쪽 블럭은 장애물을 통과해 아래쪽 빈 칸에 쌓인다.
+   *
+   * 알고리즘: 한 열의 비-장애물 슬롯만 모아 하나의 가상 스택으로 본다.
+   *   1) 위→아래 순회로 비-장애물 셀의 (value, life) 중 비어있지 않은 것만 수집(상대 순서 유지).
+   *   2) 비-장애물 슬롯 인덱스를 위→아래로 정렬한 뒤, 끝부분 N개에 수집한 블럭들을 순서대로 배치.
+   *   3) 나머지 비-장애물 슬롯(상단)은 빈 칸으로 클리어 → 후속 refill로 채워짐.
+   * 장애물 셀은 절대 변경되지 않는다. 외부 상태(선택/힌트)는 호출자가 재설정.
    * @returns 실제로 이동이 발생했는지 여부
    */
   applyGravity(): boolean {
     let moved = false;
     for (let c = 0; c < this.cols; c++) {
-      const stack: Array<{ value: number; life: number }> = [];
+      const slots: number[] = []; // 비-장애물 행 인덱스 (위→아래)
       for (let r = 0; r < this.rows; r++) {
-        const v = this.grid[r][c];
-        if (v !== 0) stack.push({ value: v, life: this.lives[r][c] });
+        if (!this.obstacles[r][c]) slots.push(r);
       }
-      const emptyCount = this.rows - stack.length;
-      for (let r = 0; r < emptyCount; r++) {
+      const blocks: Array<{ value: number; life: number }> = [];
+      for (const r of slots) {
+        const v = this.grid[r][c];
+        if (v !== 0) blocks.push({ value: v, life: this.lives[r][c] });
+      }
+      const emptyCount = slots.length - blocks.length;
+      // 상단 emptyCount 슬롯은 비움
+      for (let i = 0; i < emptyCount; i++) {
+        const r = slots[i];
         if (this.grid[r][c] !== 0 || this.lives[r][c] !== 0) moved = true;
         this.grid[r][c] = 0;
         this.lives[r][c] = 0;
       }
-      for (let i = 0; i < stack.length; i++) {
-        const newRow = emptyCount + i;
-        const item = stack[i];
-        if (this.grid[newRow][c] !== item.value || this.lives[newRow][c] !== item.life) {
+      // 하단 슬롯에 순서 그대로 배치
+      for (let i = 0; i < blocks.length; i++) {
+        const r = slots[emptyCount + i];
+        const item = blocks[i];
+        if (this.grid[r][c] !== item.value || this.lives[r][c] !== item.life) {
           moved = true;
         }
-        this.grid[newRow][c] = item.value;
-        this.lives[newRow][c] = item.life;
+        this.grid[r][c] = item.value;
+        this.lives[r][c] = item.life;
       }
     }
     return moved;
@@ -250,6 +308,11 @@ export class Board {
   /** lives 배열 사본. 세션 저장에 사용. */
   livesSnapshot(): number[][] {
     return this.lives.map((row) => row.slice());
+  }
+
+  /** obstacles 배열 사본 (boolean). 세션 저장/맵 검증용. */
+  obstaclesSnapshot(): boolean[][] {
+    return this.obstacles.map((row) => row.slice());
   }
 
   /** 남은 비어있지 않은 셀 개수. */

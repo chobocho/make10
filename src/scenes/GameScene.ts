@@ -136,7 +136,9 @@ export class GameScene implements Scene {
     if (!this.map) return;
     const initialBoard = resumeFrom?.boardState ?? this.map.initialBoard;
     const initialLives = resumeFrom?.boardLives ?? this.map.initialLives;
-    this.board = new Board(initialBoard, initialLives);
+    const initialObstacles =
+      resumeFrom?.boardObstacles ?? this.map.initialObstacles;
+    this.board = new Board(initialBoard, initialLives, initialObstacles);
     this.selector = new Selector(this.board);
     this.timer = new Timer(this.map.timeLimit);
     if (resumeFrom) {
@@ -218,6 +220,7 @@ export class GameScene implements Scene {
       mapId: this.map.id,
       boardState: this.board.snapshot(),
       boardLives: this.board.livesSnapshot(),
+      boardObstacles: this.board.obstaclesSnapshot().map((row) => row.map((v) => (v ? 1 : 0))),
       score: this.score,
       stars: computeStars(this.score, this.map.starThresholds),
       timeLeft: this.timer.getRemainingSeconds(),

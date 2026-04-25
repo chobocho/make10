@@ -19,6 +19,11 @@ export interface MapData {
    * 미지정 시 모든 비빈칸은 lives=1로 간주. id ≥ 10 맵에서 사용.
    */
   readonly initialLives?: ReadonlyArray<ReadonlyArray<number>>;
+  /**
+   * 초기 보드의 장애물 위치 (0=일반, 1=장애물). 장애물 칸은 initialBoard에서 0이어야 한다.
+   * 미지정 시 장애물 없음. id ≥ 200 맵에서 사용 (≤ 5%).
+   */
+  readonly initialObstacles?: ReadonlyArray<ReadonlyArray<number>>;
 }
 
 function isPosInt(v: unknown): v is number {
@@ -63,6 +68,21 @@ export function validateMap(input: unknown): input is MapData {
         const gv = board[r][c];
         if (gv === 0 && lv !== 0) return false;
         if (gv !== 0 && lv < 1) return false;
+      }
+    }
+  }
+  // initialObstacles 옵셔널 — 0/1 정수, 1인 칸은 initialBoard에서 0이어야 함.
+  if (o.initialObstacles !== undefined) {
+    if (!Array.isArray(o.initialObstacles)) return false;
+    if (o.initialObstacles.length !== (o.rows as number)) return false;
+    const board = o.initialBoard as number[][];
+    for (let r = 0; r < (o.rows as number); r++) {
+      const or = (o.initialObstacles as unknown[])[r];
+      if (!Array.isArray(or) || or.length !== (o.cols as number)) return false;
+      for (let c = 0; c < (o.cols as number); c++) {
+        const ov = or[c];
+        if (ov !== 0 && ov !== 1) return false;
+        if (ov === 1 && board[r][c] !== 0) return false;
       }
     }
   }

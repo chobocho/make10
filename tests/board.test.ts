@@ -531,6 +531,106 @@ describe("Board", () => {
     assertEqual(b.getLives(1, 0), 1);
   });
 
+  test("obstacles: 생성자 — 장애물 칸은 grid=0, lives=0, isObstacle=true", () => {
+    const b = new Board(
+      [
+        [1, 0],
+        [2, 3],
+      ],
+      undefined,
+      [
+        [0, 1],
+        [0, 0],
+      ],
+    );
+    assertTrue(b.isObstacle(1, 0));
+    assertFalse(b.isObstacle(0, 0));
+    assertEqual(b.getCell(1, 0), 0);
+    assertEqual(b.getLives(1, 0), 0);
+  });
+
+  test("obstacles: grid≠0 자리에 장애물 지정은 에러", () => {
+    assertThrows(
+      () =>
+        new Board(
+          [[1, 2]],
+          undefined,
+          [[1, 0]], // (0,0)=1인데 장애물 지정 → 에러
+        ),
+    );
+  });
+
+  test("obstacles: 차원 불일치는 에러", () => {
+    assertThrows(
+      () =>
+        new Board(
+          [[1, 2, 3]],
+          undefined,
+          [[0, 0]], // 행은 1이지만 열이 2 (3이어야)
+        ),
+    );
+  });
+
+  test("applyGravity: 장애물 통과 — 위 블럭이 장애물 아래 빈칸에 쌓인다", () => {
+    // 한 열만으로 시뮬레이션. 장애물은 (0,2). 그 아래 7이 비워졌다고 가정.
+    const b = new Board(
+      [[5], [3], [0], [0], [9]],
+      undefined,
+      [[0], [0], [1], [0], [0]],
+    );
+    b.applyGravity();
+    // 슬롯 = (0,1,3,4) — 4칸. 블럭 = 5,3,9 (3개). 빈 = 1.
+    // 배치: 상단 1슬롯 비움(row 0), 하단 3슬롯에 5,3,9 순으로.
+    // 결과: row0=0, row1=5, row2=장애물, row3=3, row4=9
+    assertEqual(b.getCell(0, 0), 0);
+    assertEqual(b.getCell(0, 1), 5);
+    assertTrue(b.isObstacle(0, 2));
+    assertEqual(b.getCell(0, 2), 0);
+    assertEqual(b.getCell(0, 3), 3);
+    assertEqual(b.getCell(0, 4), 9);
+  });
+
+  test("applyGravity: 장애물 위치 자체는 변하지 않는다", () => {
+    const b = new Board(
+      [[1, 0], [0, 5]],
+      undefined,
+      [[0, 1], [1, 0]],
+    );
+    b.applyGravity();
+    assertTrue(b.isObstacle(1, 0));
+    assertTrue(b.isObstacle(0, 1));
+  });
+
+  test("refill: 장애물 셀은 절대 채우지 않음", () => {
+    const b = new Board(
+      [
+        [0, 0],
+        [0, 0],
+      ],
+      undefined,
+      [
+        [1, 0],
+        [0, 0],
+      ],
+    );
+    const filled = b.refill(() => 0);
+    assertEqual(filled, 3);
+    assertTrue(b.isObstacle(0, 0));
+    assertEqual(b.getCell(0, 0), 0);
+    assertEqual(b.getCell(1, 0), 1);
+  });
+
+  test("obstaclesSnapshot: 동일 차원의 boolean 사본 반환", () => {
+    const b = new Board([[1, 0]], undefined, [[0, 1]]);
+    const snap = b.obstaclesSnapshot();
+    assertEqual(snap.length, 1);
+    assertEqual(snap[0].length, 2);
+    assertEqual(snap[0][0], false);
+    assertEqual(snap[0][1], true);
+    snap[0][0] = true; // 사본 변경이 원본에 반영되지 않음
+    assertFalse(b.isObstacle(0, 0));
+  });
+
   test("refill: 새로 채워지는 셀은 항상 lives=1", () => {
     const b = new Board(
       [

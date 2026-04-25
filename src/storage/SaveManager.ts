@@ -21,6 +21,8 @@ export interface ProgressRecord {
   readonly hintsLeft?: number;
   /** 세션 복원용 — 셀별 lives 배열 (boardState 와 차원 동일). 미설정이면 모두 1로 복원. */
   readonly boardLives?: ReadonlyArray<ReadonlyArray<number>>;
+  /** 세션 복원용 — 셀별 장애물 여부(0/1). 미설정이면 장애물 없음. */
+  readonly boardObstacles?: ReadonlyArray<ReadonlyArray<number>>;
   readonly timestamp: number;
 }
 

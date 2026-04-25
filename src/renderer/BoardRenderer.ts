@@ -100,6 +100,8 @@ const COLOR_CELL_SELECTED = "#7dd4fc";
 const COLOR_CELL_INVALID = "#ff8787";
 const COLOR_CELL_HINT = "#ffd666";
 const COLOR_TEXT = "#14213d";
+const COLOR_OBSTACLE = "#3a342c";
+const COLOR_OBSTACLE_BORDER = "#6b5b3f";
 
 /**
  * 멀티라이프 셀 배경색 — 적록 색맹을 고려한 단색조(파랑) 명도 그라데이션.
@@ -170,6 +172,18 @@ export class BoardRenderer {
         ctx.fillRect(x, y, size, size);
 
         if (!board.inBounds(c, r)) continue;
+        // 장애물: 어두운 회갈색 + 자물쇠 이모지로 표시. 중력/제거 영향 없음.
+        if (board.isObstacle(c, r)) {
+          const pad = 2;
+          ctx.fillStyle = COLOR_OBSTACLE;
+          ctx.fillRect(x + pad, y + pad, size - pad * 2, size - pad * 2);
+          ctx.strokeStyle = COLOR_OBSTACLE_BORDER;
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x + pad + 1, y + pad + 1, size - pad * 2 - 2, size - pad * 2 - 2);
+          ctx.fillStyle = "#d8c79a";
+          ctx.fillText("🪨", x + size / 2, y + size / 2 + 2);
+          continue;
+        }
         const value = board.getCell(c, r);
         if (value === 0) continue;
         const lives = board.getLives(c, r);

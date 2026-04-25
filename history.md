@@ -276,6 +276,44 @@
   - 3→1→6 다른 ㄱ자 경로도 정답 인식
   - phase 5 finale 텍스트 탭 → 종료 + 완료 마킹
 
+## 2026-04-25 — 이슈 #25/#26/#27 맵 200/300 확장 + 장애물 + 페이지 네비
+
+전체 사이즈 100→300 확장. 200판부터 페이지 단위로 잠금 + 장애물 도입.
+
+### #25 장애물 코어 지원
+- **Board** (`src/game/Board.ts`): 3번째 인자 `initialObstacles` 추가. 내부 `obstacles[r][c]` 배열로 추적.
+  - 장애물 셀은 grid=0, lives=0 강제. 생성자 정합성 검증.
+  - `isObstacle(c,r)`, `obstaclesSnapshot()` API.
+  - **applyGravity 재작성**: 각 열에서 비-장애물 슬롯만 모아 가상 스택으로 처리. 위쪽 블럭이 장애물을 통과해 아래쪽 빈칸에 쌓임. 장애물은 절대 이동/제거 안 됨.
+  - **refill**: 장애물 셀은 건드리지 않음.
+- **MapData/MapLoader** (`src/data/MapLoader.ts`): 옵셔널 `initialObstacles: number[][]` 필드 + 검증(0/1 외 값 거부, 1 자리 board=0 강제, 차원 일치).
+- **BoardRenderer** (`src/renderer/BoardRenderer.ts`): 어두운 회갈색 배경 + 🪨 이모지로 장애물 시각화. 컨텍스트는 보드 본체와 동일.
+- **GameScene** (`src/scenes/GameScene.ts`): Board 생성/세션 저장에 obstacles 연결. `boardObstacles`(0/1) 세션 필드 추가.
+- **SaveManager**: `ProgressRecord.boardObstacles` 옵셔널 추가.
+- 테스트 9건 추가(Board 7건, MapLoader 5건).
+
+### #26 페이지 기반 TitleScene
+- **SceneLayout** (`src/scenes/SceneLayout.ts`): `MapGridLayout` 인터페이스화 + `pagerY/pagerHeight/prevArrow/nextArrow/pagerLabelFontPx/pagerLabelCenterX` 추가.
+- **TitleScene** (`src/scenes/TitleScene.ts`): 스크롤 단일 그리드 → 100단위 페이지(1-100/101-200/201-300).
+  - 헤더 고정, 좌우 화살표 + "1-100 / 페이지 1 / 3" 라벨.
+  - **페이지 잠금**: 페이지 N(>1)은 (N-1)*100 맵의 ★≥1 클리어 필요.
+  - **맵 잠금(#24)** 페이지 내에서도 그대로 적용.
+  - 스크롤은 페이지 내부에서 유지(헤더 위로 침투하지 않게 컬링).
+  - `_isMapUnlocked / _isPageUnlocked / _getPage / _setPage` 테스트 접근자.
+- **main.ts**: `MAX_MAP_ID = 100 → 300`.
+- 테스트 6건 추가, 기존 `_isUnlocked` 호출은 `_isMapUnlocked`로 일괄 갱신, 스크롤 후 카드 탭 테스트는 페이저 영역 회피하도록 idx 12→24 로 변경.
+
+### #27 맵 101-300 + gen-maps 확장
+- **gen-maps.ts** (`tools/gen-maps.ts`):
+  - presetFor 확장 — 마스터/그랜드마스터/장애물 입문/장애물 마스터 단계.
+  - `OBSTACLE_MIN_ID=200`, `OBSTACLE_MAX_RATIO=0.05` 상수.
+  - `genObstacles()` — id≥200 에서 보드 셀의 3-5%(절대 5% 미만)을 장애물로 셔플 배치.
+  - `genBoardWithInitialCombo` — obstacles 인자 받아 검증 시 `new Board(board, undefined, obstacles)` 로 유효 조합 존재 확인.
+  - 장애물 자리 lives=0 강제.
+- **data/map101.json ~ map300.json** 200개 신규 생성. 200~300은 `initialObstacles` 포함.
+- **mapLoader.test**: MAP_COUNT 100→300 확장. 검증 시 obstacles 함께 전달. `id<200` obstacles 부재, `id≥200` 비율 ≤5% 단언.
+- 검증: 283/283 pass, 번들 105.3KB.
+
 ## 2026-04-25 — 이슈 #24 레벨 순차 잠금
 
 **변경**: 직전 맵을 ★1 이상으로 클리어해야 다음 맵에 진입 가능. map 1은 항상 열림.

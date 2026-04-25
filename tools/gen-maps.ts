@@ -24,7 +24,13 @@ interface MapSpec {
   starThresholds: StarThresholds;
   initialBoard: number[][];
   initialLives?: number[][];
+  initialObstacles?: number[][];
 }
+
+/** id ≥ 200 부터 장애물 도입. 비율은 cols*rows 의 [3%, 5%]. */
+const OBSTACLE_MIN_ID = 200;
+const OBSTACLE_MIN_RATIO = 0.03;
+const OBSTACLE_MAX_RATIO = 0.05;
 
 /**
  * id에 따른 멀티라이프 최댓값.
@@ -109,21 +115,72 @@ function genRandomBoard(cols: number, rows: number, rand: () => number): number[
 /**
  * 초기 유효 조합(합=10)이 1개 이상 존재할 때까지 최대 N회 재시도.
  * 실패 시 보드의 0행 앞 두 칸을 강제로 (3,7)로 세팅해 강제 만족.
+ * obstacles가 주어지면 검증 시 함께 전달해 "장애물에 막혀 인접 조합이 사라지는" 케이스를 거른다.
  */
 function genBoardWithInitialCombo(
   cols: number,
   rows: number,
   rand: () => number,
   maxAttempts = 200,
+  obstacles?: number[][],
 ): number[][] {
   for (let i = 0; i < maxAttempts; i++) {
     const board = genRandomBoard(cols, rows, rand);
-    if (findValidCombination(new Board(board))) return board;
+    if (obstacles) {
+      // 장애물 자리 보드값은 0으로 비워야 Board 생성자에서 정합성 통과.
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (obstacles[r][c] === 1) board[r][c] = 0;
+        }
+      }
+    }
+    const b = new Board(board, undefined, obstacles);
+    if (findValidCombination(b)) return board;
   }
+  // 폴백: 0행 앞 두 칸을 강제로 (3,7) 인접 쌍으로 세팅.
   const board = genRandomBoard(cols, rows, rand);
+  if (obstacles) {
+    obstacles[0][0] = 0;
+    obstacles[0][1] = 0;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (obstacles[r][c] === 1) board[r][c] = 0;
+      }
+    }
+  }
   board[0][0] = 3;
   board[0][1] = 7;
   return board;
+}
+
+/**
+ * id ≥ 200 인 맵의 장애물 배치를 생성. 비율은 [3%, 5%] 균등 임의값으로 결정.
+ * 같은 행 양쪽 끝을 모두 장애물로 만드는 등 극단 분포는 피하기 위해 단순 셔플 표본 추출 사용.
+ */
+function genObstacles(
+  cols: number,
+  rows: number,
+  rand: () => number,
+): number[][] {
+  const total = cols * rows;
+  const ratio = OBSTACLE_MIN_RATIO + rand() * (OBSTACLE_MAX_RATIO - OBSTACLE_MIN_RATIO);
+  const cap = Math.floor(total * OBSTACLE_MAX_RATIO); // 절대 5% 초과 금지
+  const target = Math.min(cap, Math.max(1, Math.round(total * ratio)));
+  const indices: number[] = [];
+  for (let i = 0; i < total; i++) indices.push(i);
+  for (let i = total - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [indices[i], indices[j]] = [indices[j], indices[i]];
+  }
+  const obstacles: number[][] = [];
+  for (let r = 0; r < rows; r++) obstacles.push(new Array(cols).fill(0));
+  for (let i = 0; i < target; i++) {
+    const idx = indices[i];
+    const r = Math.floor(idx / cols);
+    const c = idx % cols;
+    obstacles[r][c] = 1;
+  }
+  return obstacles;
 }
 
 interface Preset {
@@ -141,7 +198,11 @@ function presetFor(id: number): Preset {
     if (id <= 10) return `초급 ${id - 2}`;
     if (id <= 30) return `중급 ${id - 10}`;
     if (id <= 60) return `상급 ${id - 30}`;
-    return `전문가 ${id - 60}`;
+    if (id <= 100) return `전문가 ${id - 60}`;
+    if (id <= 150) return `마스터 ${id - 100}`;
+    if (id < 200) return `그랜드마스터 ${id - 150}`;
+    if (id <= 250) return `장애물 입문 ${id - 199}`;
+    return `장애물 마스터 ${id - 250}`;
   })();
   // 난이도 테이블 — id가 클수록 격자 크기/시간 압박/힌트 축소
   let cols = 6;
@@ -173,11 +234,23 @@ function presetFor(id: number): Preset {
     rows = 9;
     timeLimit = 65 - Math.floor((id - 30) / 6);
     hintCount = 1;
-  } else {
+  } else if (id <= 100) {
     cols = 6;
     rows = 9;
     timeLimit = 60 - Math.floor((id - 60) / 10);
     hintCount = 1;
+  } else if (id < 200) {
+    // 마스터/그랜드마스터: 6x9, 시간 압박 강화. 100 → 55, 199 → 35 선형 감소.
+    cols = 6;
+    rows = 9;
+    timeLimit = Math.max(35, 55 - Math.floor((id - 100) / 5));
+    hintCount = id < 150 ? 1 : id < 180 ? 1 : 0;
+  } else {
+    // 장애물 구간: 6x9, 시간은 200→55에서 300→30으로 완만히 줄임 (장애물로 난이도 보조).
+    cols = 6;
+    rows = 9;
+    timeLimit = Math.max(30, 55 - Math.floor((id - 200) / 4));
+    hintCount = id < 250 ? 1 : 0;
   }
   return { id, name, cols, rows, timeLimit, hintCount };
 }
@@ -185,7 +258,16 @@ function presetFor(id: number): Preset {
 export function generateMap(id: number): MapSpec {
   const preset = presetFor(id);
   const rand = mulberry32(preset.id * 2654435761);
-  const initialBoard = genBoardWithInitialCombo(preset.cols, preset.rows, rand);
+  // 장애물은 보드 생성 검증 단계에서 함께 고려해야 하므로 먼저 생성.
+  const obstacles =
+    id >= OBSTACLE_MIN_ID ? genObstacles(preset.cols, preset.rows, rand) : undefined;
+  const initialBoard = genBoardWithInitialCombo(
+    preset.cols,
+    preset.rows,
+    rand,
+    200,
+    obstacles,
+  );
   const starThresholds = defaultStarThresholds(
     preset.cols,
     preset.rows,
@@ -204,7 +286,19 @@ export function generateMap(id: number): MapSpec {
     initialBoard,
   };
   if (maxLife >= 2) {
-    spec.initialLives = genInitialLives(preset.cols, preset.rows, maxLife, rand);
+    // 장애물 셀에는 lives=0 강제. genInitialLives 가 모든 셀을 1로 시작하므로 후처리.
+    const lives = genInitialLives(preset.cols, preset.rows, maxLife, rand);
+    if (obstacles) {
+      for (let r = 0; r < preset.rows; r++) {
+        for (let c = 0; c < preset.cols; c++) {
+          if (obstacles[r][c] === 1) lives[r][c] = 0;
+        }
+      }
+    }
+    spec.initialLives = lives;
+  }
+  if (obstacles) {
+    spec.initialObstacles = obstacles;
   }
   return spec;
 }

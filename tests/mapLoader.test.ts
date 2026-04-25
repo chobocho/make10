@@ -122,16 +122,20 @@ describe("MapLoader — validation", () => {
   });
 });
 
-const MAP_COUNT = 100;
+const MAP_COUNT = 300;
 
-describe("생성된 맵 JSON 실제 검증 (전체 100개)", () => {
-  test("100개 맵 모두 스키마 유효 & 유효 조합 존재", () => {
+describe("생성된 맵 JSON 실제 검증 (전체 300개)", () => {
+  test("300개 맵 모두 스키마 유효 & 유효 조합 존재", () => {
     for (let id = 1; id <= MAP_COUNT; id++) {
       const m = parseMapJson(readMap(id));
       assertEqual(m.id, id);
       assertEqual(m.initialBoard.length, m.rows);
       for (const row of m.initialBoard) assertEqual(row.length, m.cols);
-      const board = new Board(m.initialBoard);
+      // 장애물(>=200)은 Board 생성 시 함께 전달해야 정합성 통과.
+      const obstacles = m.initialObstacles
+        ? m.initialObstacles.map((row) => row.slice())
+        : undefined;
+      const board = new Board(m.initialBoard, m.initialLives, obstacles);
       const combo = findValidCombination(board);
       assertTrue(combo !== null, `map${id}: 유효 조합 없음`);
     }
@@ -146,7 +150,7 @@ describe("생성된 맵 JSON 실제 검증 (전체 100개)", () => {
     assertEqual(sum, 10);
   });
 
-  test("모든 맵의 timeLimit > 0, hintCount ≥ 0, id 1..100", () => {
+  test("모든 맵의 timeLimit > 0, hintCount ≥ 0, id 1..300", () => {
     const ids: number[] = [];
     for (let id = 1; id <= MAP_COUNT; id++) {
       const m = parseMapJson(readMap(id));
@@ -166,14 +170,22 @@ describe("생성된 맵 JSON 실제 검증 (전체 100개)", () => {
       return total / (to - from + 1);
     }
     assertTrue(avgTime(60, 100) < avgTime(1, 10));
+    // 100~300 구간이 1~60 구간보다 평균이 짧음
+    assertTrue(avgTime(101, 300) < avgTime(1, 60));
   });
 
-  test("맵 셀 값은 1~9 범위 (빈 칸 0은 초기 보드에 없어야 함)", () => {
+  test("맵 셀 값은 1~9 범위 (장애물 자리만 0 허용)", () => {
     for (let id = 1; id <= MAP_COUNT; id++) {
       const m = parseMapJson(readMap(id));
-      for (const row of m.initialBoard) {
-        for (const v of row) {
-          assertTrue(v >= 1 && v <= 9);
+      for (let r = 0; r < m.rows; r++) {
+        for (let c = 0; c < m.cols; c++) {
+          const v = m.initialBoard[r][c];
+          const isObs = m.initialObstacles?.[r]?.[c] === 1;
+          if (isObs) {
+            assertEqual(v, 0, `map${id} (${c},${r}): 장애물 자리에 ${v}`);
+          } else {
+            assertTrue(v >= 1 && v <= 9, `map${id} (${c},${r}): ${v}`);
+          }
         }
       }
     }
@@ -199,6 +211,12 @@ describe("생성된 맵 JSON 실제 검증 (전체 100개)", () => {
       for (let r = 0; r < m.rows; r++) {
         for (let c = 0; c < m.cols; c++) {
           const lv = m.initialLives![r][c];
+          // 장애물 자리는 lives=0이어야 함.
+          if (m.initialObstacles?.[r]?.[c] === 1) {
+            assertEqual(lv, 0, `map${id} (${c},${r}): 장애물 자리에 lives=${lv}`);
+            total++;
+            continue;
+          }
           assertTrue(lv >= 1 && lv <= maxLife, `map${id} (${c},${r}): lives=${lv}`);
           if (lv >= 2) multi++;
           total++;
@@ -206,6 +224,30 @@ describe("생성된 맵 JSON 실제 검증 (전체 100개)", () => {
       }
       const ratio = multi / total;
       assertTrue(ratio <= 0.15 + 1e-9, `map${id}: 멀티 비율 ${ratio.toFixed(3)} > 15%`);
+    }
+  });
+
+  test("id < 200: initialObstacles 없음", () => {
+    for (let id = 1; id < 200; id++) {
+      const m = parseMapJson(readMap(id));
+      assertEqual(m.initialObstacles, undefined, `map${id}`);
+    }
+  });
+
+  test("id ≥ 200: initialObstacles 존재 + 비율 ≤ 5%", () => {
+    for (let id = 200; id <= MAP_COUNT; id++) {
+      const m = parseMapJson(readMap(id));
+      assertTrue(m.initialObstacles !== undefined, `map${id}: initialObstacles 누락`);
+      let count = 0;
+      for (const row of m.initialObstacles!) {
+        for (const v of row) {
+          assertTrue(v === 0 || v === 1, `map${id}: 0/1 외 값 ${v}`);
+          if (v === 1) count++;
+        }
+      }
+      const ratio = count / (m.rows * m.cols);
+      assertTrue(ratio <= 0.05 + 1e-9, `map${id}: 장애물 비율 ${ratio.toFixed(3)} > 5%`);
+      assertTrue(count >= 1, `map${id}: 장애물 0개`);
     }
   });
 });
@@ -251,5 +293,67 @@ describe("MapLoader — initialLives 검증", () => {
 
   test("initialLives 빈칸 정합성 — 비빈칸인데 lives=0 거부", () => {
     assertFalse(validateMap({ ...(baseMap() as object), initialLives: [[0, 1]] }));
+  });
+});
+
+describe("MapLoader — initialObstacles 검증", () => {
+  function baseMapWithObstacle(): unknown {
+    return {
+      id: 200,
+      name: "t",
+      cols: 3,
+      rows: 1,
+      timeLimit: 10,
+      hintCount: 0,
+      targetScore: 0,
+      starThresholds: [50, 150, 300],
+      initialBoard: [[3, 0, 7]], // (1,0)이 0 → 장애물 자리
+    };
+  }
+
+  test("initialObstacles 미지정은 통과", () => {
+    assertTrue(
+      validateMap({
+        ...(baseMapWithObstacle() as object),
+        initialBoard: [[3, 7, 1]],
+      }),
+    );
+  });
+
+  test("initialObstacles: 장애물 칸은 board=0이어야 함", () => {
+    assertTrue(
+      validateMap({
+        ...(baseMapWithObstacle() as object),
+        initialObstacles: [[0, 1, 0]],
+      }),
+    );
+  });
+
+  test("initialObstacles: 차원 불일치 거부", () => {
+    assertFalse(
+      validateMap({
+        ...(baseMapWithObstacle() as object),
+        initialObstacles: [[0, 1]],
+      }),
+    );
+  });
+
+  test("initialObstacles: 0/1 외 값 거부", () => {
+    assertFalse(
+      validateMap({
+        ...(baseMapWithObstacle() as object),
+        initialObstacles: [[0, 2, 0]],
+      }),
+    );
+  });
+
+  test("initialObstacles: board≠0 위치를 장애물로 마킹하면 거부", () => {
+    assertFalse(
+      validateMap({
+        ...(baseMapWithObstacle() as object),
+        initialBoard: [[3, 4, 7]],
+        initialObstacles: [[0, 1, 0]],
+      }),
+    );
   });
 });

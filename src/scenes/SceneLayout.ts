@@ -21,22 +21,51 @@ export function hitButton(btn: ButtonRect, x: number, y: number): boolean {
  * Title 화면의 N개 맵 버튼 그리드. 뷰포트 폭에 따라 열 수 결정.
  * 반환 배열의 index는 mapId-1에 대응한다.
  * `contentHeight` 는 스크롤 가능한 최하단까지의 총 높이.
+ * 페이지 네비 화살표는 타이틀 바로 아래(`pagerY`)에 배치된다.
  */
-export function computeMapGridLayout(
-  viewWidth: number,
-  viewHeight: number,
-  count: number,
-): {
+export interface MapGridLayout {
   readonly titleFontPx: number;
   readonly titleY: number;
   readonly buttons: ReadonlyArray<ButtonRect>;
   readonly contentHeight: number;
-} {
-  const titleY = Math.round(clamp(viewHeight * 0.12, 60, 160));
+  readonly pagerY: number;
+  readonly pagerHeight: number;
+  readonly prevArrow: ButtonRect;
+  readonly nextArrow: ButtonRect;
+  readonly pagerLabelFontPx: number;
+  readonly pagerLabelCenterX: number;
+}
+
+export function computeMapGridLayout(
+  viewWidth: number,
+  viewHeight: number,
+  count: number,
+): MapGridLayout {
+  const titleY = Math.round(clamp(viewHeight * 0.10, 50, 140));
   const titleFontPx = Math.round(clamp(viewHeight * 0.07, 32, 72));
 
   const cols = viewWidth < 480 ? 3 : viewWidth < 800 ? 4 : 5;
-  const gridTop = titleY + titleFontPx + Math.round(clamp(viewHeight * 0.05, 20, 60));
+  // 타이틀 아래 페이지 네비게이션 (화살표 + "n / N" 라벨) 고정 영역.
+  const pagerY = titleY + titleFontPx + Math.round(clamp(viewHeight * 0.018, 8, 24));
+  const pagerHeight = Math.round(clamp(viewHeight * 0.06, 36, 64));
+  const arrowSize = pagerHeight;
+  const pagerSidePad = Math.round(clamp(viewWidth * 0.05, 14, 56));
+  const prevArrow: ButtonRect = {
+    x: pagerSidePad,
+    y: pagerY,
+    width: arrowSize,
+    height: arrowSize,
+  };
+  const nextArrow: ButtonRect = {
+    x: viewWidth - pagerSidePad - arrowSize,
+    y: pagerY,
+    width: arrowSize,
+    height: arrowSize,
+  };
+  const pagerLabelFontPx = Math.round(arrowSize * 0.42);
+  const pagerLabelCenterX = viewWidth / 2;
+
+  const gridTop = pagerY + pagerHeight + Math.round(clamp(viewHeight * 0.025, 12, 36));
   const gridPadX = Math.round(clamp(viewWidth * 0.06, 16, 60));
   const available = viewWidth - gridPadX * 2;
   const gap = Math.round(clamp(viewWidth * 0.02, 10, 22));
@@ -56,7 +85,18 @@ export function computeMapGridLayout(
   const rows = Math.ceil(count / cols);
   const bottomPad = Math.round(clamp(viewHeight * 0.06, 24, 80));
   const contentHeight = gridTop + rows * btnH + (rows - 1) * gap + bottomPad;
-  return { titleFontPx, titleY, buttons, contentHeight };
+  return {
+    titleFontPx,
+    titleY,
+    buttons,
+    contentHeight,
+    pagerY,
+    pagerHeight,
+    prevArrow,
+    nextArrow,
+    pagerLabelFontPx,
+    pagerLabelCenterX,
+  };
 }
 
 /**

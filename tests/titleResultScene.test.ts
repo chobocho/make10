@@ -182,10 +182,10 @@ describe("TitleScene", () => {
     assertEqual(loadCalls[0], 1);
   });
 
-  test("스크롤 후 버튼 탭: 로지컬 좌표로 정확히 히트", async () => {
+  test("스크롤 후 버튼 탭: 로지컬 좌표로 정확히 히트 (페이저 영역 아래)", async () => {
     const { ctx, loadCalls } = makeCtx(100);
-    // 잠금 정책 도입 후 idx=12(mapId=13)에 진입하려면 직전 12개를 클리어해야 한다.
-    for (let id = 1; id <= 12; id++) {
+    // 페이저 고정 후 스크롤 500px 했을 때도 페이저 영역 밖에 떨어지는 idx=24(mapId=25) 사용.
+    for (let id = 1; id <= 24; id++) {
       await ctx.saveManager.save({
         mapId: id,
         boardState: [],
@@ -203,11 +203,13 @@ describe("TitleScene", () => {
     scene._scrollBy(500);
     const scrolled = scene._getScrollY();
     assertTrue(scrolled > 0);
-    const grid = computeMapGridLayout(480, 800, ctx.maxMapId);
-    const cols = 4; // 480px 폭 → 4열
-    const targetIdx = cols * 3; // 네 번째 행의 첫 칸 (idx=12)
+    const grid = computeMapGridLayout(480, 800, 100); // 페이지 1 = 100개
+    const cols = 4;
+    const targetIdx = cols * 6; // idx=24, mapId=25
     const target = grid.buttons[targetIdx];
     const visibleY = target.y - scrolled;
+    // 페이저 영역(헤더 고정) 아래에 떨어져야 한다.
+    assertTrue(visibleY > grid.pagerY + grid.pagerHeight);
     scene.onPointerDown!(target.x + target.width / 2, visibleY + target.height / 2);
     scene.onPointerUp!(target.x + target.width / 2, visibleY + target.height / 2);
     await Promise.resolve();
@@ -322,9 +324,9 @@ describe("TitleScene: 레벨 순차 잠금", () => {
     scene.enter();
     await Promise.resolve();
     await Promise.resolve();
-    assertTrue(scene._isUnlocked(1));
-    assertFalse(scene._isUnlocked(2));
-    assertFalse(scene._isUnlocked(10));
+    assertTrue(scene._isMapUnlocked(1));
+    assertFalse(scene._isMapUnlocked(2));
+    assertFalse(scene._isMapUnlocked(10));
   });
 
   test("map 2 클리어(★1+) → map 3 잠금 해제", async () => {
@@ -349,10 +351,10 @@ describe("TitleScene: 레벨 순차 잠금", () => {
     scene.enter();
     await Promise.resolve();
     await Promise.resolve();
-    assertTrue(scene._isUnlocked(1));
-    assertTrue(scene._isUnlocked(2));
-    assertTrue(scene._isUnlocked(3));
-    assertFalse(scene._isUnlocked(4));
+    assertTrue(scene._isMapUnlocked(1));
+    assertTrue(scene._isMapUnlocked(2));
+    assertTrue(scene._isMapUnlocked(3));
+    assertFalse(scene._isMapUnlocked(4));
   });
 
   test("stars=0 기록은 클리어로 간주하지 않음 → 다음 맵 잠금 유지", async () => {
@@ -369,7 +371,7 @@ describe("TitleScene: 레벨 순차 잠금", () => {
     scene.enter();
     await Promise.resolve();
     await Promise.resolve();
-    assertFalse(scene._isUnlocked(2));
+    assertFalse(scene._isMapUnlocked(2));
   });
 
   test("잠긴 맵 버튼 탭 → loadMap/transition 호출 안 함", async () => {
@@ -387,6 +389,116 @@ describe("TitleScene: 레벨 순차 잠금", () => {
     await Promise.resolve();
     assertEqual(loadCalls.length, 0);
     assertEqual(transitions.length, 0);
+  });
+});
+
+describe("TitleScene: 페이지 기반 네비게이션", () => {
+  test("페이지 잠금: 초기에는 1페이지만 열려있고 2/3은 잠금", async () => {
+    const { ctx } = makeCtx(300);
+    const scene = new TitleScene(ctx);
+    scene.enter();
+    await Promise.resolve();
+    await Promise.resolve();
+    assertTrue(scene._isPageUnlocked(1));
+    assertFalse(scene._isPageUnlocked(2));
+    assertFalse(scene._isPageUnlocked(3));
+  });
+
+  test("map 100 ★≥1 클리어 → 페이지 2 열림", async () => {
+    const { ctx } = makeCtx(300);
+    await ctx.saveManager.save({
+      mapId: 100,
+      boardState: [],
+      score: 1500,
+      stars: 1,
+      timeLeft: 0,
+      timestamp: 0,
+    });
+    const scene = new TitleScene(ctx);
+    scene.enter();
+    await Promise.resolve();
+    await Promise.resolve();
+    assertTrue(scene._isPageUnlocked(2));
+    assertFalse(scene._isPageUnlocked(3));
+  });
+
+  test("map 200 ★≥1 클리어 → 페이지 3 열림", async () => {
+    const { ctx } = makeCtx(300);
+    await ctx.saveManager.save({
+      mapId: 200,
+      boardState: [],
+      score: 1500,
+      stars: 1,
+      timeLeft: 0,
+      timestamp: 0,
+    });
+    const scene = new TitleScene(ctx);
+    scene.enter();
+    await Promise.resolve();
+    await Promise.resolve();
+    assertTrue(scene._isPageUnlocked(3));
+  });
+
+  test("화살표 탭: 잠긴 페이지로 이동 시도 → 페이지 변하지 않음", async () => {
+    const { ctx } = makeCtx(300);
+    const scene = new TitleScene(ctx);
+    scene.enter();
+    await Promise.resolve();
+    await Promise.resolve();
+    scene.render();
+    const layout = computeMapGridLayout(480, 800, 100);
+    const next = layout.nextArrow;
+    scene.onPointerDown!(next.x + next.width / 2, next.y + next.height / 2);
+    scene.onPointerUp!(next.x + next.width / 2, next.y + next.height / 2);
+    assertEqual(scene._getPage(), 1);
+  });
+
+  test("화살표 탭: 잠금 해제된 페이지로 이동", async () => {
+    const { ctx } = makeCtx(300);
+    await ctx.saveManager.save({
+      mapId: 100,
+      boardState: [],
+      score: 1500,
+      stars: 2,
+      timeLeft: 0,
+      timestamp: 0,
+    });
+    const scene = new TitleScene(ctx);
+    scene.enter();
+    await Promise.resolve();
+    await Promise.resolve();
+    scene.render();
+    const layout = computeMapGridLayout(480, 800, 100);
+    const next = layout.nextArrow;
+    scene.onPointerDown!(next.x + next.width / 2, next.y + next.height / 2);
+    scene.onPointerUp!(next.x + next.width / 2, next.y + next.height / 2);
+    assertEqual(scene._getPage(), 2);
+  });
+
+  test("페이지 2에서 첫 카드 탭 → mapId 101 로드 (단, 100을 ★1+로 깸)", async () => {
+    const { ctx, loadCalls } = makeCtx(300);
+    // 페이지 2에 진입하려면 100 클리어, 페이지 2의 첫 맵 101도 100 클리어로 자동 해제.
+    await ctx.saveManager.save({
+      mapId: 100,
+      boardState: [],
+      score: 1500,
+      stars: 1,
+      timeLeft: 0,
+      timestamp: 0,
+    });
+    const scene = new TitleScene(ctx);
+    scene.enter();
+    await Promise.resolve();
+    await Promise.resolve();
+    scene._setPage(2);
+    scene.render();
+    const layout = computeMapGridLayout(480, 800, 100); // 페이지 2도 100개
+    const first = layout.buttons[0];
+    scene.onPointerDown!(first.x + first.width / 2, first.y + first.height / 2);
+    scene.onPointerUp!(first.x + first.width / 2, first.y + first.height / 2);
+    await Promise.resolve();
+    await Promise.resolve();
+    assertEqual(loadCalls[0], 101);
   });
 });
 
