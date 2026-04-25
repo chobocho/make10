@@ -19,6 +19,27 @@ export const MIN_SELECTION = 2;
 export const MAX_SELECTION = 3;
 export const TARGET_SUM = 10;
 
+/**
+ * 만능(?) 블럭을 고려한 합 10 매칭 판정. positions 길이는 호출자가 책임.
+ * - W=만능 개수, S=고정 셀의 face value 합. (10 - S) ∈ [W, 9·W] 면 매치 가능.
+ * - W=0 이면 S = 10.
+ */
+export function isWildSum10(
+  positions: ReadonlyArray<Position>,
+  board: Board,
+): boolean {
+  let fixed = 0;
+  let wild = 0;
+  for (const [c, r] of positions) {
+    if (!board.inBounds(c, r)) return false;
+    if (board.isWildcard(c, r)) wild++;
+    else fixed += board.getCell(c, r);
+  }
+  const need = TARGET_SUM - fixed;
+  if (wild === 0) return need === 0;
+  return need >= wild && need <= wild * 9;
+}
+
 export class Selector {
   private readonly board: Board;
   private positions: Position[] = [];
@@ -39,11 +60,16 @@ export class Selector {
     return this.positions.length > 0;
   }
 
-  /** 제거 조건(길이 2~3, 합 10) 충족 여부. */
+  /**
+   * 제거 조건 — 길이 2~3 + (만능 고려) 합 10 충족 여부.
+   * 만능 셀은 1~9 중 어떤 값으로도 채택될 수 있으므로 다음 조건과 동치:
+   *   `(10 - 고정합) ∈ [W, 9·W]`  (W = 선택 내 만능 개수)
+   * 만능이 없으면 기존 규칙(고정합 = 10).
+   */
   isValidForRemoval(): boolean {
     const n = this.positions.length;
     if (n < MIN_SELECTION || n > MAX_SELECTION) return false;
-    return this.getSum() === TARGET_SUM;
+    return isWildSum10(this.positions, this.board);
   }
 
   begin(col: number, row: number): boolean {

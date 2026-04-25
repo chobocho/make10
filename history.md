@@ -276,6 +276,53 @@
   - 3→1→6 다른 ㄱ자 경로도 정답 인식
   - phase 5 finale 텍스트 탭 → 종료 + 완료 마킹
 
+## 2026-04-25 — 이슈 #33 만능(?) 블럭
+
+어떤 숫자와도 합 10 매치를 만드는 wildcard 블럭 도입.
+무한 게임 흐름을 위해 stuck 시 자동 회복 + 랜덤 타임 자동 스폰.
+
+### 데이터 모델 (Board)
+- 4번째 생성자 인자 `initialWildcards` 추가 + 별도 `wildcards[r][c]` 배열.
+- 만능 셀 규약: grid=0, lives≥1(자동 1 보정), obstacle=false. 장애물과 상호 배타.
+- `isEmpty(c,r)` 시맨틱 보정: `grid===0 && !wild` (만능은 빈칸 아님 → 선택 가능).
+- `isWildcard(c,r)`, `wildcardsSnapshot()`, `convertToWildcard(c,r)` API.
+- `applyMatch` → 파괴 시 wild 플래그도 false 로 정리.
+- `applyGravity` → 만능도 일반 블럭처럼 떨어짐 (wild 플래그 보존).
+- `refill` → 만능 셀은 보존(refill 대상 아님).
+- `nonEmptyCells` → wild 필드 추가.
+
+### 매칭 규칙 (Selector / Hint)
+- 신규 헬퍼 `isWildSum10(positions, board)` (`Selector.ts`).
+  - W=만능 개수, S=고정 셀 합. `(10-S) ∈ [W, 9·W]` 이면 매치 가능.
+  - W=0이면 기존 규칙(S=10).
+  - (W,X) 가로 인접: X∈[1,9]면 항상 매치. (W,W): 매치. (W,X,Y): X+Y∈[1,9].
+- `Selector.isValidForRemoval`, `Hint.findValidCombination` 모두 새 규칙 사용.
+
+### 렌더 + 이펙트
+- `BoardRenderer`: 만능 셀은 보라→핑크 그라데이션 배경 + 흰 ? 글리프 + 흰 외곽선.
+- `EffectLayer.spawnWildcardEntrance(col, row, layout)` 신규:
+  - 외곽 14개 파티클이 중심으로 수렴 + 보라색 확장 링 + "?" 라벨 팝업.
+- `AudioManager`: `wild` 사운드 추가 (660~1320Hz, 360ms, sine).
+
+### GameScene 통합
+- 상수: `WILD_SPAWN_MIN_MS=12000`, `MAX_MS=25000`, `MAX_ON_BOARD=3`.
+- `nextWildSpawnMs` 카운트다운 (활성 시간만 누적, 일시정지 중 멈춤). 0 도달 → `trySpawnWildcard()` + 인터벌 재추첨.
+- **stuck 회복**: 매치 후 `findValidCombination=null` 이면 `trySpawnWildcard` → 그래도 없으면 `endGame("stuck")`.
+- `trySpawnWildcard`: 비-장애물·비-만능·비-빈칸 후보 중 랜덤 1개 변환. cap 3개. 사운드 + 등장 이펙트.
+- `_setWildEnabled(false)` 테스트 토글 — 기존 stuck 흐름 검증을 위한 옵트아웃.
+- 세션 저장에 `boardWildcards` 포함.
+
+### MapLoader / SaveManager
+- `MapData.initialWildcards`, `ProgressRecord.boardWildcards` 옵셔널 필드 + 검증(0/1, 만능 자리 board=0 + obstacle=0).
+
+### 테스트 (20건 추가)
+- Board 9건: 생성자/검증/convertToWildcard/applyGravity/refill/snapshot.
+- Selector 3건: (W,X)/(W,W)/(W,X,Y).
+- Hint 4건: 만능 인접 매치 발견, 격리된 만능은 null.
+- GameScene 4건: trySpawnWildcard, stuck 회복, 자동 타이머 스폰, _setWildEnabled.
+- 기존 8건은 `_setWildEnabled(false)` 옵트아웃 또는 nonEmptyCells 시그니처 보정.
+- 검증: 350/350 pass (5회 안정), 번들 114.0 → 123.8KB.
+
 ## 2026-04-25 — 이슈 #32 3셀 매치 점수 400 → 300
 
 밸런스 조정 — 400 은 셀당 133점이라 2셀(100/셀) 대비 33% 우위로 다소 강했음.

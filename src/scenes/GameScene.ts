@@ -62,6 +62,11 @@ const CHAIN_WINDOW_MS = 1000;
 /** 연쇄 단계당 추가 보너스. 첫 연쇄(depth=2)는 +50, 다음은 +100, ..., 캡 적용. */
 const CHAIN_BONUS_STEP = 50;
 const CHAIN_BONUS_CAP = 250;
+/** 만능(?) 블럭 자동 스폰 — 매 [MIN, MAX] 사이 랜덤 인터벌마다 1개. */
+const WILD_SPAWN_MIN_MS = 12_000;
+const WILD_SPAWN_MAX_MS = 25_000;
+/** 보드에 동시에 존재할 수 있는 만능 블럭 최대 개수 — 게임이 너무 쉬워지지 않도록. */
+const WILD_MAX_ON_BOARD = 3;
 
 export class GameScene implements Scene {
   private readonly context: SceneContext;
@@ -94,6 +99,10 @@ export class GameScene implements Scene {
   private lastMatchAtMs: number;
   /** 현재 연쇄 길이. 0=매치 없음, 1=단발, 2+=연쇄. */
   private chainCount: number;
+  /** 다음 자동 만능(?) 스폰까지 남은 시간(ms). 0 도달 시 스폰 후 다시 랜덤 인터벌로 리셋. */
+  private nextWildSpawnMs: number;
+  /** 만능 메커니즘(자동 스폰 + stuck 회복) 전체 토글. 테스트가 결정적 흐름을 위해 끌 수 있다. */
+  private wildEnabled: boolean;
 
   constructor(
     context: SceneContext,
@@ -124,6 +133,8 @@ export class GameScene implements Scene {
     this.elapsedMs = 0;
     this.lastMatchAtMs = Number.NEGATIVE_INFINITY;
     this.chainCount = 0;
+    this.nextWildSpawnMs = 0;
+    this.wildEnabled = true;
   }
 
   async enter(args?: unknown): Promise<void> {
@@ -156,7 +167,14 @@ export class GameScene implements Scene {
     const initialLives = resumeFrom?.boardLives ?? this.map.initialLives;
     const initialObstacles =
       resumeFrom?.boardObstacles ?? this.map.initialObstacles;
-    this.board = new Board(initialBoard, initialLives, initialObstacles);
+    const initialWildcards =
+      resumeFrom?.boardWildcards ?? this.map.initialWildcards;
+    this.board = new Board(
+      initialBoard,
+      initialLives,
+      initialObstacles,
+      initialWildcards,
+    );
     this.selector = new Selector(this.board);
     this.timer = new Timer(this.map.timeLimit);
     if (resumeFrom) {
@@ -171,6 +189,7 @@ export class GameScene implements Scene {
     this.elapsedMs = 0;
     this.lastMatchAtMs = Number.NEGATIVE_INFINITY;
     this.chainCount = 0;
+    this.nextWildSpawnMs = this.pickNextWildInterval();
     this.ended = false;
     this.pressedHintBtn = false;
     this.pressedPauseBtn = false;
@@ -244,6 +263,7 @@ export class GameScene implements Scene {
       boardState: this.board.snapshot(),
       boardLives: this.board.livesSnapshot(),
       boardObstacles: this.board.obstaclesSnapshot().map((row) => row.map((v) => (v ? 1 : 0))),
+      boardWildcards: this.board.wildcardsSnapshot().map((row) => row.map((v) => (v ? 1 : 0))),
       score: this.score,
       stars: computeStars(this.score, this.map.starThresholds),
       timeLeft: this.timer.getRemainingSeconds(),
@@ -334,6 +354,49 @@ export class GameScene implements Scene {
     this.elapsedMs += deltaMs;
     // 이펙트는 활성 상태에서만 진행 — 매치 직후에도 자연스럽게 흐름.
     this.effects.update(deltaMs);
+    // 자동 만능 스폰 타이머.
+    if (this.wildEnabled) {
+      this.nextWildSpawnMs -= deltaMs;
+      if (this.nextWildSpawnMs <= 0) {
+        this.trySpawnWildcard();
+        this.nextWildSpawnMs = this.pickNextWildInterval();
+      }
+    }
+  }
+
+  private pickNextWildInterval(): number {
+    const span = WILD_SPAWN_MAX_MS - WILD_SPAWN_MIN_MS;
+    return WILD_SPAWN_MIN_MS + this.randomFn() * span;
+  }
+
+  /**
+   * 보드의 임의 셀(비-장애물·비-만능·비-빈칸)을 만능(?) 블럭으로 변환.
+   * 캡(WILD_MAX_ON_BOARD) 도달 시 또는 후보가 없으면 무시.
+   * @returns 변환에 성공했으면 true.
+   */
+  private trySpawnWildcard(): boolean {
+    if (!this.board) return false;
+    let wildCount = 0;
+    const candidates: Array<readonly [number, number]> = [];
+    for (let r = 0; r < this.board.getRows(); r++) {
+      for (let c = 0; c < this.board.getCols(); c++) {
+        if (this.board.isWildcard(c, r)) {
+          wildCount++;
+          continue;
+        }
+        if (this.board.isObstacle(c, r)) continue;
+        if (this.board.isEmpty(c, r)) continue;
+        candidates.push([c, r] as const);
+      }
+    }
+    if (wildCount >= WILD_MAX_ON_BOARD) return false;
+    if (candidates.length === 0) return false;
+    const idx = Math.floor(this.randomFn() * candidates.length);
+    const [c, r] = candidates[idx];
+    if (!this.board.convertToWildcard(c, r)) return false;
+    this.effects.spawnWildcardEntrance(c, r, this.boardRenderer.getLayout());
+    this.context.audio.play("wild");
+    return true;
   }
 
   render(): void {
@@ -607,8 +670,16 @@ export class GameScene implements Scene {
       this.hint?.clear();
       this.score += baseScore + chainBonus;
       this.context.audio.play("remove");
+      // stuck 구원: 유효 조합이 없으면 만능 블럭을 임의 위치에 스폰해 게임 계속.
+      // 만능 변환 후에도 여전히 매치 경로가 없는 극단 상황이면 endGame.
       if (findValidCombination(this.board) === null) {
-        this.endGame("stuck");
+        if (this.wildEnabled) {
+          const spawned = this.trySpawnWildcard();
+          if (spawned) this.nextWildSpawnMs = this.pickNextWildInterval();
+        }
+        if (findValidCombination(this.board) === null) {
+          this.endGame("stuck");
+        }
       }
     } else if (result.positions.length >= 2) {
       this.context.audio.play("invalid");
@@ -689,6 +760,16 @@ export class GameScene implements Scene {
   }
   _getTutorialBoardLayout(): import("../renderer/BoardRenderer").BoardLayout | null {
     return this.tutorial._getBoardLayout();
+  }
+  _setWildEnabled(enabled: boolean): void {
+    this.wildEnabled = enabled;
+    if (!enabled) this.nextWildSpawnMs = Number.POSITIVE_INFINITY;
+  }
+  _trySpawnWildcard(): boolean {
+    return this.trySpawnWildcard();
+  }
+  _getNextWildSpawnMs(): number {
+    return this.nextWildSpawnMs;
   }
 }
 

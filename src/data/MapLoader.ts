@@ -21,9 +21,14 @@ export interface MapData {
   readonly initialLives?: ReadonlyArray<ReadonlyArray<number>>;
   /**
    * 초기 보드의 장애물 위치 (0=일반, 1=장애물). 장애물 칸은 initialBoard에서 0이어야 한다.
-   * 미지정 시 장애물 없음. id ≥ 200 맵에서 사용 (≤ 5%).
+   * 미지정 시 장애물 없음. id ≥ 101 맵에서 사용.
    */
   readonly initialObstacles?: ReadonlyArray<ReadonlyArray<number>>;
+  /**
+   * 초기 만능(?) 블럭 위치 (0=일반, 1=만능). 만능 칸은 board=0, obstacle=0이어야 한다.
+   * 정적 맵에는 거의 사용 안 됨; 세션 복원과의 형식 통일을 위해 정의.
+   */
+  readonly initialWildcards?: ReadonlyArray<ReadonlyArray<number>>;
 }
 
 function isPosInt(v: unknown): v is number {
@@ -83,6 +88,25 @@ export function validateMap(input: unknown): input is MapData {
         const ov = or[c];
         if (ov !== 0 && ov !== 1) return false;
         if (ov === 1 && board[r][c] !== 0) return false;
+      }
+    }
+  }
+  // initialWildcards — 0/1 정수, 1인 칸은 board=0 + obstacle=0 이어야 함.
+  if (o.initialWildcards !== undefined) {
+    if (!Array.isArray(o.initialWildcards)) return false;
+    if (o.initialWildcards.length !== (o.rows as number)) return false;
+    const board = o.initialBoard as number[][];
+    const obs = o.initialObstacles as number[][] | undefined;
+    for (let r = 0; r < (o.rows as number); r++) {
+      const wr = (o.initialWildcards as unknown[])[r];
+      if (!Array.isArray(wr) || wr.length !== (o.cols as number)) return false;
+      for (let c = 0; c < (o.cols as number); c++) {
+        const wv = wr[c];
+        if (wv !== 0 && wv !== 1) return false;
+        if (wv === 1) {
+          if (board[r][c] !== 0) return false;
+          if (obs && obs[r][c] === 1) return false;
+        }
       }
     }
   }

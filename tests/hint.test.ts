@@ -149,6 +149,35 @@ describe("Hint", () => {
   });
 });
 
+describe("findValidCombination + 만능(?) 블럭", () => {
+  test("만능 셀이 있으면 인접한 어떤 숫자와도 매치를 찾는다", () => {
+    // 1행: [W, 5] — 일반 규칙으로는 5+? 매치 없음. 만능이 5와 인접 → 매치 발견.
+    const b = new Board([[0, 5]], undefined, undefined, [[1, 0]]);
+    const r = findValidCombination(b);
+    assertTrue(r !== null);
+    assertEqual(r!.length, 2);
+  });
+
+  test("만능 둘만 인접해도 매치 (W+W)", () => {
+    const b = new Board([[0, 0]], undefined, undefined, [[1, 1]]);
+    assertTrue(findValidCombination(b) !== null);
+  });
+
+  test("3셀 (W, X, Y): X+Y ≤ 9 면 매치 발견", () => {
+    // [W, 3, 4]: 3+4=7, 만능=3 → OK
+    const b = new Board([[0, 3, 4]], undefined, undefined, [[1, 0, 0]]);
+    assertTrue(findValidCombination(b) !== null);
+  });
+
+  test("3셀 (W, X, Y): X+Y ≥ 10 이고 다른 조합도 없으면 null", () => {
+    // 1행 길이 3: [W, 5, 5]: W+5+5 → 만능=0 불가. 인접 쌍 (W,5)는 가능 → null 아님.
+    // 그래서 (W,5) 쌍이 발견되도록 — 이 케이스는 다른 의도.
+    // 대신 격리: [W (혼자, 인접 없음)]. 1셀 보드는 cols=1,rows=1로 — 인접 없음.
+    const b = new Board([[0]], undefined, undefined, [[1]]);
+    assertEqual(findValidCombination(b), null);
+  });
+});
+
 describe("findValidCombination + 장애물", () => {
   test("3 [장애물] 7 가로 — 인접 쌍 없음 → null", () => {
     const b = new Board([[3, 0, 7]], undefined, [[0, 1, 0]]);

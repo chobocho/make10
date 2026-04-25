@@ -238,15 +238,15 @@ describe("Board", () => {
     ]);
   });
 
-  test("nonEmptyCells 순회 — value + lives 포함", () => {
+  test("nonEmptyCells 순회 — value + lives + wild 포함", () => {
     const b = new Board([
       [1, 0],
       [0, 2],
     ]);
     const cells = Array.from(b.nonEmptyCells());
     assertDeepEqual(cells, [
-      { col: 0, row: 0, value: 1, lives: 1 },
-      { col: 1, row: 1, value: 2, lives: 1 },
+      { col: 0, row: 0, value: 1, lives: 1, wild: false },
+      { col: 1, row: 1, value: 2, lives: 1, wild: false },
     ]);
   });
 
@@ -711,6 +711,105 @@ describe("Board", () => {
     assertEqual(snap[0][1], true);
     snap[0][0] = true; // 사본 변경이 원본에 반영되지 않음
     assertFalse(b.isObstacle(0, 0));
+  });
+
+  // ---------- 만능(?) 블럭 ----------
+
+  test("wildcard: 생성자에 initialWildcards 전달하면 isWildcard=true, isEmpty=false", () => {
+    const b = new Board(
+      [[0, 1]],
+      undefined,
+      undefined,
+      [[1, 0]],
+    );
+    assertTrue(b.isWildcard(0, 0));
+    assertFalse(b.isEmpty(0, 0)); // 만능은 빈칸이 아님 (선택 가능)
+    assertEqual(b.getCell(0, 0), 0); // grid는 0(숫자 아님)
+    assertEqual(b.getLives(0, 0), 1); // 자동 1로 보정
+  });
+
+  test("wildcard: 빈칸이 아닌 자리에 만능 지정하면 에러", () => {
+    assertThrows(
+      () => new Board([[3, 7]], undefined, undefined, [[1, 0]]),
+    );
+  });
+
+  test("wildcard + obstacle 동일 위치는 에러", () => {
+    assertThrows(
+      () =>
+        new Board(
+          [[0, 1]],
+          undefined,
+          [[1, 0]],
+          [[1, 0]],
+        ),
+    );
+  });
+
+  test("convertToWildcard: 일반 셀 → 만능, lives=1로 리셋", () => {
+    const b = new Board([[5]], [[3]]);
+    assertTrue(b.convertToWildcard(0, 0));
+    assertTrue(b.isWildcard(0, 0));
+    assertEqual(b.getCell(0, 0), 0);
+    assertEqual(b.getLives(0, 0), 1); // 멀티라이프(3)였어도 1로 리셋
+  });
+
+  test("convertToWildcard: 빈칸/장애물/이미 만능인 자리는 false", () => {
+    const b = new Board(
+      [
+        [3, 0, 0, 0],
+      ],
+      undefined,
+      [[0, 0, 1, 0]],
+      [[0, 0, 0, 1]],
+    );
+    assertTrue(b.convertToWildcard(0, 0)); // 일반 셀 OK
+    assertFalse(b.convertToWildcard(0, 0)); // 이제 이미 만능
+    assertFalse(b.convertToWildcard(1, 0)); // 빈칸
+    assertFalse(b.convertToWildcard(2, 0)); // 장애물
+    assertFalse(b.convertToWildcard(3, 0)); // 이미 만능
+  });
+
+  test("applyMatch: 만능 셀이 destroy 되면 wild 플래그도 false 로 정리", () => {
+    const b = new Board([[0, 7]], undefined, undefined, [[1, 0]]);
+    b.applyMatch([
+      [0, 0],
+      [1, 0],
+    ]);
+    assertFalse(b.isWildcard(0, 0));
+    assertEqual(b.getCell(0, 0), 0);
+    assertEqual(b.getLives(0, 0), 0);
+  });
+
+  test("applyGravity: 만능 셀도 일반 블럭처럼 함께 낙하 (wild 플래그 보존)", () => {
+    // 0열: row0=만능, row1=빈칸 → 만능이 row1로 떨어져야 함
+    const b = new Board([[0], [0]], undefined, undefined, [[1], [0]]);
+    b.applyGravity();
+    assertFalse(b.isWildcard(0, 0));
+    assertTrue(b.isWildcard(0, 1));
+  });
+
+  test("refill: 만능 셀은 보존(refill 대상 아님)", () => {
+    const b = new Board(
+      [[0, 0]],
+      undefined,
+      undefined,
+      [[1, 0]],
+    );
+    const filled = b.refill(() => 0);
+    assertEqual(filled, 1); // (1,0) 빈칸만 채워짐
+    assertTrue(b.isWildcard(0, 0));
+    assertEqual(b.getCell(0, 0), 0); // 만능은 grid=0 유지
+    assertEqual(b.getCell(1, 0), 1);
+  });
+
+  test("wildcardsSnapshot: 동일 차원 boolean 사본", () => {
+    const b = new Board([[3, 0]], undefined, undefined, [[0, 1]]);
+    const snap = b.wildcardsSnapshot();
+    assertEqual(snap[0][0], false);
+    assertEqual(snap[0][1], true);
+    snap[0][0] = true;
+    assertFalse(b.isWildcard(0, 0));
   });
 
   test("refill: 새로 채워지는 셀은 항상 lives=1", () => {

@@ -5,8 +5,10 @@
  *   - 셀 값 0은 빈 칸(제거됨). 1~9만 유효한 값이다.
  *   - 셀 lives: 0=빈 칸, 1=일반(매치 즉시 제거), 2~5=멀티라이프(매치마다 lives -1, 0이면 제거).
  *   - obstacle: 파괴 불가의 고정 장애물. grid=0, lives=0, obstacle=true 로 표현.
- *     선택 대상이 아니며(grid=0), 중력의 영향을 받지 않고 제자리에 머무른다.
+ *     선택 대상이 아니며, 중력의 영향을 받지 않고 제자리에 머무른다.
  *     장애물 위쪽의 블럭이 떨어질 때는 장애물을 "통과"하여 아래쪽 빈 칸으로 쌓인다.
+ *   - wildcard("?"): 어떤 숫자와도 합 10을 만들 수 있는 만능 블럭. grid=0, lives=1, wild=true.
+ *     선택 가능(isEmpty=false). 중력 영향 받음(일반 블럭처럼). 제거 시 wild 플래그도 false 로 복귀.
  *   - 제거 후 중력 적용 + 빈 칸 리필로 보드는 항상 가득 찬 상태를 유지.
  *
  * 좌표 규약: (col, row) — 첫 번째가 x(열), 두 번째가 y(행).
@@ -26,11 +28,14 @@ export class Board {
   private readonly lives: number[][];
   /** obstacle[row][col] — 파괴 불가 장애물 여부. true면 grid=0, lives=0이어야 함. */
   private readonly obstacles: boolean[][];
+  /** wild[row][col] — 만능(?) 블럭 여부. true면 grid=0, lives≥1, obstacle=false. */
+  private readonly wildcards: boolean[][];
 
   constructor(
     initial: ReadonlyArray<ReadonlyArray<Cell>>,
     initialLives?: ReadonlyArray<ReadonlyArray<number>>,
     initialObstacles?: ReadonlyArray<ReadonlyArray<boolean | number>>,
+    initialWildcards?: ReadonlyArray<ReadonlyArray<boolean | number>>,
   ) {
     if (initial.length === 0) {
       throw new Error("Board: 최소 1행이 필요합니다.");
@@ -90,7 +95,41 @@ export class Board {
       this.lives = this.grid.map((row) => row.map((v) => (v === 0 ? 0 : 1)));
     }
 
-    // obstacles — 장애물 셀은 반드시 grid=0, lives=0이어야 함.
+    // wildcards — 만능 셀: grid=0, lives≥1, obstacle 과 상호 배타.
+    // (먼저 wildcards 처리해 lives=0 이던 grid=0 셀에 lives=1 을 채워주면, 후속 obstacle 검증과 충돌 없음.)
+    if (initialWildcards) {
+      if (initialWildcards.length !== rows) {
+        throw new Error(
+          `Board: initialWildcards 행 수 불일치 (기준 ${rows}, ${initialWildcards.length}).`,
+        );
+      }
+      const wOut: boolean[][] = [];
+      for (let r = 0; r < rows; r++) {
+        const wr = initialWildcards[r];
+        if (!Array.isArray(wr) || wr.length !== cols) {
+          throw new Error(`Board: initialWildcards row ${r} 열 수 불일치.`);
+        }
+        const row: boolean[] = new Array(cols);
+        for (let c = 0; c < cols; c++) {
+          const wv = wr[c];
+          const flag = wv === true || wv === 1;
+          if (flag) {
+            if (this.grid[r][c] !== 0) {
+              throw new Error(`Board: 만능 셀에 값 ${this.grid[r][c]} @ (${c},${r}).`);
+            }
+            // wildcard 는 lives≥1. initialLives 미지정이면 기본 1, 지정 후 0이면 1로 보정.
+            if (this.lives[r][c] < 1) this.lives[r][c] = 1;
+          }
+          row[c] = flag;
+        }
+        wOut.push(row);
+      }
+      this.wildcards = wOut;
+    } else {
+      this.wildcards = this.grid.map((row) => row.map(() => false));
+    }
+
+    // obstacles — 장애물 셀은 반드시 grid=0, lives=0이어야 함. wildcard 와 상호 배타.
     if (initialObstacles) {
       if (initialObstacles.length !== rows) {
         throw new Error(
@@ -110,6 +149,9 @@ export class Board {
           if (flag) {
             if (this.grid[r][c] !== 0) {
               throw new Error(`Board: 장애물 셀에 값 ${this.grid[r][c]} @ (${c},${r}).`);
+            }
+            if (this.wildcards[r][c]) {
+              throw new Error(`Board: 장애물과 만능 셀이 동일 위치 @ (${c},${r}).`);
             }
             this.lives[r][c] = 0;
           }
@@ -149,8 +191,16 @@ export class Board {
     return this.lives[row][col];
   }
 
+  /**
+   * 셀이 "비어있다(=선택 불가)"인지 여부.
+   * 빈칸(grid=0, !wild) 만 true. 장애물도 grid=0이지만 isObstacle로 따로 분기되며
+   * Selector/Hint 입장에서는 isEmpty=true(선택 불가)로 처리한다. 만능(wild)은 false.
+   */
   isEmpty(col: number, row: number): boolean {
-    return this.getCell(col, row) === 0;
+    if (!this.inBounds(col, row)) {
+      throw new RangeError(`Board.isEmpty: 경계 밖 (${col},${row}).`);
+    }
+    return this.grid[row][col] === 0 && !this.wildcards[row][col];
   }
 
   isObstacle(col: number, row: number): boolean {
@@ -160,13 +210,21 @@ export class Board {
     return this.obstacles[row][col];
   }
 
-  /** 셀을 즉시 비운다(테스트/레거시 용). lives도 0으로 동기화. */
+  isWildcard(col: number, row: number): boolean {
+    if (!this.inBounds(col, row)) {
+      throw new RangeError(`Board.isWildcard: 경계 밖 (${col},${row}).`);
+    }
+    return this.wildcards[row][col];
+  }
+
+  /** 셀을 즉시 비운다(테스트/레거시 용). lives/wildcard 도 정리. */
   clearCell(col: number, row: number): void {
     if (!this.inBounds(col, row)) {
       throw new RangeError(`Board.clearCell: 경계 밖 (${col},${row}).`);
     }
     this.grid[row][col] = 0;
     this.lives[row][col] = 0;
+    this.wildcards[row][col] = false;
   }
 
   clearCells(positions: ReadonlyArray<Position>): void {
@@ -212,6 +270,7 @@ export class Board {
     this.lives[row][col] = next;
     if (next === 0) {
       this.grid[row][col] = 0;
+      this.wildcards[row][col] = false;
       return 1;
     }
     return 0;
@@ -229,6 +288,7 @@ export class Board {
     for (let r = 0; r < this.rows; r++) {
       for (let c = 0; c < this.cols; c++) {
         if (this.obstacles[r][c]) continue; // 장애물은 건드리지 않음
+        if (this.wildcards[r][c]) continue; // 만능은 보존
         if (this.grid[r][c] === 0) {
           this.grid[r][c] = 1 + Math.floor(randomFn() * 9);
           this.lives[r][c] = 1;
@@ -237,6 +297,22 @@ export class Board {
       }
     }
     return filled;
+  }
+
+  /**
+   * 임의 셀을 만능(?) 블럭으로 전환한다. 비-장애물·비-만능·비-빈칸 셀에서만 성공.
+   * 변환 시 lives 는 1 로 리셋(wildcard 는 멀티라이프 미적용).
+   * @returns 변환 성공 여부.
+   */
+  convertToWildcard(col: number, row: number): boolean {
+    if (!this.inBounds(col, row)) return false;
+    if (this.obstacles[row][col]) return false;
+    if (this.wildcards[row][col]) return false;
+    if (this.grid[row][col] === 0) return false; // 빈 칸
+    this.grid[row][col] = 0;
+    this.lives[row][col] = 1;
+    this.wildcards[row][col] = true;
+    return true;
   }
 
   /**
@@ -257,28 +333,40 @@ export class Board {
       for (let r = 0; r < this.rows; r++) {
         if (!this.obstacles[r][c]) slots.push(r);
       }
-      const blocks: Array<{ value: number; life: number }> = [];
+      const blocks: Array<{ value: number; life: number; wild: boolean }> = [];
       for (const r of slots) {
         const v = this.grid[r][c];
-        if (v !== 0) blocks.push({ value: v, life: this.lives[r][c] });
+        const w = this.wildcards[r][c];
+        // 빈칸 판정: grid===0 && !wild. wildcard 도 블럭으로 취급해 같이 낙하한다.
+        if (v !== 0 || w) {
+          blocks.push({ value: v, life: this.lives[r][c], wild: w });
+        }
       }
       const emptyCount = slots.length - blocks.length;
       // 상단 emptyCount 슬롯은 비움
       for (let i = 0; i < emptyCount; i++) {
         const r = slots[i];
-        if (this.grid[r][c] !== 0 || this.lives[r][c] !== 0) moved = true;
+        if (this.grid[r][c] !== 0 || this.lives[r][c] !== 0 || this.wildcards[r][c]) {
+          moved = true;
+        }
         this.grid[r][c] = 0;
         this.lives[r][c] = 0;
+        this.wildcards[r][c] = false;
       }
       // 하단 슬롯에 순서 그대로 배치
       for (let i = 0; i < blocks.length; i++) {
         const r = slots[emptyCount + i];
         const item = blocks[i];
-        if (this.grid[r][c] !== item.value || this.lives[r][c] !== item.life) {
+        if (
+          this.grid[r][c] !== item.value ||
+          this.lives[r][c] !== item.life ||
+          this.wildcards[r][c] !== item.wild
+        ) {
           moved = true;
         }
         this.grid[r][c] = item.value;
         this.lives[r][c] = item.life;
+        this.wildcards[r][c] = item.wild;
       }
     }
     return moved;
@@ -315,6 +403,11 @@ export class Board {
     return this.obstacles.map((row) => row.slice());
   }
 
+  /** wildcards 배열 사본 (boolean). 세션 저장용. */
+  wildcardsSnapshot(): boolean[][] {
+    return this.wildcards.map((row) => row.slice());
+  }
+
   /** 남은 비어있지 않은 셀 개수. */
   remainingCount(): number {
     let n = 0;
@@ -326,17 +419,24 @@ export class Board {
     return n;
   }
 
-  /** 모든 비어있지 않은 셀의 좌표를 순회한다. */
+  /** 모든 비어있지 않은 셀(만능 포함)의 좌표를 순회한다. */
   *nonEmptyCells(): IterableIterator<{
     col: number;
     row: number;
     value: number;
     lives: number;
+    wild: boolean;
   }> {
     for (let r = 0; r < this.rows; r++) {
       for (let c = 0; c < this.cols; c++) {
-        const v = this.grid[r][c];
-        if (v !== 0) yield { col: c, row: r, value: v, lives: this.lives[r][c] };
+        if (this.grid[r][c] === 0 && !this.wildcards[r][c]) continue;
+        yield {
+          col: c,
+          row: r,
+          value: this.grid[r][c],
+          lives: this.lives[r][c],
+          wild: this.wildcards[r][c],
+        };
       }
     }
   }

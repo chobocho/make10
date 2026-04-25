@@ -23,6 +23,8 @@ export interface ProgressRecord {
   readonly boardLives?: ReadonlyArray<ReadonlyArray<number>>;
   /** 세션 복원용 — 셀별 장애물 여부(0/1). 미설정이면 장애물 없음. */
   readonly boardObstacles?: ReadonlyArray<ReadonlyArray<number>>;
+  /** 세션 복원용 — 셀별 만능(?) 여부(0/1). 미설정이면 만능 블럭 없음. */
+  readonly boardWildcards?: ReadonlyArray<ReadonlyArray<number>>;
   readonly timestamp: number;
 }
 

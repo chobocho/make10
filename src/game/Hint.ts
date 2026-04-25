@@ -5,9 +5,9 @@
  * 좌표 규약: `(col, row)`.
  */
 import type { Board, Position } from "./Board";
+import { isWildSum10 } from "./Selector";
 
 export const HINT_HIGHLIGHT_MS = 3000;
-const TARGET_SUM = 10;
 
 const DIRS: ReadonlyArray<readonly [number, number]> = [
   [1, 0],
@@ -16,7 +16,10 @@ const DIRS: ReadonlyArray<readonly [number, number]> = [
   [0, -1],
 ];
 
-/** 합이 10인 2셀 또는 3셀 연속 경로를 찾으면 해당 위치 배열을 반환. 없으면 null. */
+/**
+ * 합이 10인 2셀 또는 3셀 연속 경로를 찾으면 해당 위치 배열을 반환. 없으면 null.
+ * 만능(?) 셀은 isWildSum10 규칙으로 판단 — 어떤 숫자와도 매치되므로 더 많은 경로가 유효.
+ */
 export function findValidCombination(board: Board): readonly Position[] | null {
   const cols = board.getCols();
   const rows = board.getRows();
@@ -25,22 +28,19 @@ export function findValidCombination(board: Board): readonly Position[] | null {
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       if (board.isEmpty(c, r)) continue;
-      const v = board.getCell(c, r);
       if (c + 1 < cols && !board.isEmpty(c + 1, r)) {
-        if (v + board.getCell(c + 1, r) === TARGET_SUM) {
-          return [
-            [c, r],
-            [c + 1, r],
-          ];
-        }
+        const pair: Position[] = [
+          [c, r],
+          [c + 1, r],
+        ];
+        if (isWildSum10(pair, board)) return pair;
       }
       if (r + 1 < rows && !board.isEmpty(c, r + 1)) {
-        if (v + board.getCell(c, r + 1) === TARGET_SUM) {
-          return [
-            [c, r],
-            [c, r + 1],
-          ];
-        }
+        const pair: Position[] = [
+          [c, r],
+          [c, r + 1],
+        ];
+        if (isWildSum10(pair, board)) return pair;
       }
     }
   }
@@ -49,24 +49,21 @@ export function findValidCombination(board: Board): readonly Position[] | null {
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       if (board.isEmpty(c, r)) continue;
-      const v1 = board.getCell(c, r);
       for (const [dx1, dy1] of DIRS) {
         const c2 = c + dx1;
         const r2 = r + dy1;
         if (!board.inBounds(c2, r2) || board.isEmpty(c2, r2)) continue;
-        const v2 = board.getCell(c2, r2);
         for (const [dx2, dy2] of DIRS) {
           const c3 = c2 + dx2;
           const r3 = r2 + dy2;
           if (c3 === c && r3 === r) continue;
           if (!board.inBounds(c3, r3) || board.isEmpty(c3, r3)) continue;
-          if (v1 + v2 + board.getCell(c3, r3) === TARGET_SUM) {
-            return [
-              [c, r],
-              [c2, r2],
-              [c3, r3],
-            ];
-          }
+          const trio: Position[] = [
+            [c, r],
+            [c2, r2],
+            [c3, r3],
+          ];
+          if (isWildSum10(trio, board)) return trio;
         }
       }
     }

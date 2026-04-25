@@ -171,6 +171,48 @@ describe("Selector", () => {
   });
 });
 
+describe("Selector + 만능(?) 블럭", () => {
+  test("(W, X): X∈[1,9] 이면 항상 매치 가능", () => {
+    for (const x of [1, 2, 5, 9]) {
+      const b = new Board([[0, x]], undefined, undefined, [[1, 0]]);
+      const s = new Selector(b);
+      assertTrue(s.begin(0, 0));
+      assertTrue(s.extend(1, 0));
+      assertTrue(s.isValidForRemoval(), `x=${x}`);
+    }
+  });
+
+  test("(W, W): 둘 다 만능이면 매치 가능", () => {
+    const b = new Board(
+      [[0, 0]],
+      undefined,
+      undefined,
+      [[1, 1]],
+    );
+    const s = new Selector(b);
+    s.begin(0, 0);
+    s.extend(1, 0);
+    assertTrue(s.isValidForRemoval());
+  });
+
+  test("(W, X, Y) 3셀: X+Y ∈ [1, 9] 이면 매치, 10 이상이면 거부", () => {
+    // 3셀 (만능, 1, 2): 1+2=3, 만능=7 → OK
+    const b1 = new Board([[0, 1, 2]], undefined, undefined, [[1, 0, 0]]);
+    const s1 = new Selector(b1);
+    s1.begin(0, 0);
+    s1.extend(1, 0);
+    s1.extend(2, 0);
+    assertTrue(s1.isValidForRemoval());
+    // 3셀 (만능, 5, 5): 5+5=10, 만능=0 → 만능은 [1,9]만 가능 → 거부
+    const b2 = new Board([[0, 5, 5]], undefined, undefined, [[1, 0, 0]]);
+    const s2 = new Selector(b2);
+    s2.begin(0, 0);
+    s2.extend(1, 0);
+    s2.extend(2, 0);
+    assertFalse(s2.isValidForRemoval());
+  });
+});
+
 describe("Selector + 장애물", () => {
   test("begin: 장애물 셀(grid=0)은 거부", () => {
     const b = new Board([[3, 0, 7]], undefined, [[0, 1, 0]]);

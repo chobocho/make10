@@ -102,6 +102,10 @@ const COLOR_CELL_HINT = "#ffd666";
 const COLOR_TEXT = "#14213d";
 const COLOR_OBSTACLE = "#3a342c";
 const COLOR_OBSTACLE_BORDER = "#6b5b3f";
+const COLOR_WILD_BG = "#a78bfa";
+const COLOR_WILD_BG_2 = "#ec4899";
+const COLOR_WILD_BORDER = "#ffffff";
+const COLOR_WILD_TEXT = "#ffffff";
 
 /**
  * 멀티라이프 셀 배경색 — 적록 색맹을 고려한 단색조(파랑) 명도 그라데이션.
@@ -182,6 +186,30 @@ export class BoardRenderer {
           ctx.strokeRect(x + pad + 1, y + pad + 1, size - pad * 2 - 2, size - pad * 2 - 2);
           ctx.fillStyle = "#d8c79a";
           ctx.fillText("🪨", x + size / 2, y + size / 2 + 2);
+          continue;
+        }
+        // 만능(?) 블럭: 그라데이션 배경 + 흰 ? 글리프. 선택 시 별도 색상 처리는 일반 셀과 동일.
+        if (board.isWildcard(c, r)) {
+          const pad = 2;
+          const grad = ctx.createLinearGradient(x, y, x + size, y + size);
+          grad.addColorStop(0, COLOR_WILD_BG);
+          grad.addColorStop(1, COLOR_WILD_BG_2);
+          const isSel = inList(selection, c, r);
+          if (isSel) {
+            ctx.fillStyle = invalid ? COLOR_CELL_INVALID : COLOR_CELL_SELECTED;
+            ctx.fillRect(x + pad, y + pad, size - pad * 2, size - pad * 2);
+          } else {
+            ctx.fillStyle = grad;
+            ctx.fillRect(x + pad, y + pad, size - pad * 2, size - pad * 2);
+          }
+          ctx.strokeStyle = COLOR_WILD_BORDER;
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x + pad + 1, y + pad + 1, size - pad * 2 - 2, size - pad * 2 - 2);
+          ctx.fillStyle = COLOR_WILD_TEXT;
+          ctx.font = `900 ${Math.floor(size * 0.7)}px -apple-system, "Segoe UI", sans-serif`;
+          ctx.fillText("?", x + size / 2, y + size / 2 + 2);
+          // 폰트 복원 (이후 일반 셀 렌더용)
+          ctx.font = `${fontSize}px -apple-system, "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
           continue;
         }
         const value = board.getCell(c, r);

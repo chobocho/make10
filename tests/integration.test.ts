@@ -201,13 +201,14 @@ describe("Integration: Title → Game → Result", () => {
     for (let i = 0; i < 8; i++) await Promise.resolve();
     assertEqual(fsm.getCurrentId(), "game");
 
-    // 한 번 매치 (리필로 보드는 가득 유지)
+    // 한 번 매치 (리필로 보드는 가득 유지). 만능 자동/구원 스폰은 결정적 검증 위해 비활성.
     const gameScene = fsm.getCurrent() as GameScene;
+    (gameScene as unknown as { _setWildEnabled(b: boolean): void })._setWildEnabled(false);
     const map = pairTiledFixture(1);
     await clearAllPairs(gameScene, map);
     // 매치 후에도 game 씬 유지 (리필되므로 clear/stuck 모두 발생 X with Math.random)
     assertTrue((gameScene as unknown as { _getScore(): number })._getScore() >= 100);
-    // 보드 가득 차있음 확인
+    // 보드 가득 차있음 확인 (wildcard 비활성이므로 grid==0이면 빈 칸)
     const snap = (gameScene as unknown as { board: { snapshot(): number[][] } }).board.snapshot();
     for (const row of snap) for (const v of row) assertTrue(v !== 0);
 
@@ -277,6 +278,7 @@ describe("Integration: Title → Game → Result", () => {
     // 직접 게임으로 진입 — 한 번 매치 후 stuck(RNG=0 → 모두 1) 으로 종료
     await fsm.start("game", { map: winMap });
     const scene = fsm.getCurrent() as GameScene;
+    (scene as unknown as { _setWildEnabled(b: boolean): void })._setWildEnabled(false);
     scene.render();
     const layout = (scene as unknown as {
       boardRenderer: { getLayout(): { originX: number; originY: number; cellSize: number } };
@@ -463,6 +465,7 @@ describe("Integration: Title → Game → Result", () => {
     fsm.register("result", new ResultScene(ctx));
     await fsm.start("game", { map: stuckMap });
     const scene = fsm.getCurrent() as GameScene;
+    (scene as unknown as { _setWildEnabled(b: boolean): void })._setWildEnabled(false);
     scene.render();
     const layout = (scene as unknown as {
       boardRenderer: { getLayout(): { originX: number; originY: number; cellSize: number } };

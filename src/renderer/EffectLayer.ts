@@ -323,6 +323,47 @@ export class EffectLayer {
     return this.effects.length;
   }
 
+  /**
+   * 만능(?) 블럭 등장 이펙트 — 셀 외곽에서 중심으로 수렴하는 파티클 + 확장 링.
+   * 매치 폭발과는 정반대 방향(밖→안)으로 움직여 "생성"의 시각적 메타포 형성.
+   */
+  spawnWildcardEntrance(col: number, row: number, layout: CellLayout): void {
+    const size = layout.cellSize;
+    const cx = layout.originX + col * size + size / 2;
+    const cy = layout.originY + row * size + size / 2;
+    const lifeMs = 600;
+    const count = 14;
+    const radius = size * 1.6;
+    const colors = ["#ffffff", "#fff7c2", "#a78bfa", "#ec4899"];
+    const particles: Particle[] = [];
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2 + this.randomFn() * 0.3;
+      const startX = cx + Math.cos(angle) * radius;
+      const startY = cy + Math.sin(angle) * radius;
+      // 중심으로 수렴 — 속도 벡터를 외곽→중심 방향으로.
+      const speed = radius * 1.7; // px/s 정도; lifeMs 안에 도달하도록.
+      particles.push({
+        x: startX,
+        y: startY,
+        vx: -Math.cos(angle) * speed,
+        vy: -Math.sin(angle) * speed,
+        life: lifeMs,
+        maxLife: lifeMs,
+        size: 3.6,
+        color: colors[Math.floor(this.randomFn() * colors.length)],
+      });
+    }
+    this.effects.push(new ParticleBurst(particles));
+    // 안→밖 확장 링 1개 — 등장의 펄스감.
+    this.effects.push(
+      new ExpandingRing(cx, cy, size * 1.1, 520, "#a78bfa", Math.max(2, size * 0.05)),
+    );
+    // 라벨 팝업 — "?" 한 글자, 위로 살짝 떠오름.
+    this.effects.push(
+      new ScorePopup(cx, cy, "?", Math.max(22, size * 0.55), "#ffffff", 700),
+    );
+  }
+
   /** 화면 전환 등으로 정리가 필요할 때 사용. */
   clear(): void {
     this.effects = [];

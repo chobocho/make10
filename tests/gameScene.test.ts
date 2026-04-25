@@ -163,6 +163,7 @@ describe("GameScene", () => {
         starThresholds: [50, 150, 300],
       },
     });
+    scene._setWildEnabled(false); // stuck → endGame 경로 검증을 위해 만능 회복 비활성
     scene.render();
     const layout = (scene as unknown as { boardRenderer: { getLayout(): any } }).boardRenderer.getLayout();
     const a = { x: layout.originX + layout.cellSize / 2, y: layout.originY + layout.cellSize / 2 };
@@ -183,6 +184,7 @@ describe("GameScene", () => {
     // RNG=0 → 리필 값은 모두 1 (2x1 맵에서는 1+1=2라 유효 조합 없음 → stuck)
     const scene = new GameScene(context, () => 0, 0);
     await scene.enter({ map: tinyMap() });
+    scene._setWildEnabled(false);
     scene.render();
     const layout = (scene as unknown as { boardRenderer: { getLayout(): any } }).boardRenderer.getLayout();
     const cx1 = layout.originX + layout.cellSize / 2;
@@ -462,6 +464,7 @@ describe("GameScene", () => {
         ],
       },
     });
+    scene._setWildEnabled(false); // 만능 회복 비활성: 순수 stuck → endGame 경로 검증
     scene.render();
     const layout = (scene as unknown as { boardRenderer: { getLayout(): any } }).boardRenderer.getLayout();
     const a = { x: layout.originX + layout.cellSize / 2, y: layout.originY + layout.cellSize / 2 };
@@ -1166,6 +1169,7 @@ describe("GameScene + 매치 이펙트", () => {
     const { context } = makeCtx(r);
     const scene = new GameScene(context, () => 0, 0);
     await scene.enter({ map: tripleMap });
+    scene._setWildEnabled(false);
     scene.render();
     const layout = (scene as unknown as {
       boardRenderer: { getLayout(): { originX: number; originY: number; cellSize: number } };
@@ -1202,6 +1206,7 @@ describe("GameScene + 매치 이펙트", () => {
     const { context } = makeCtx(r);
     const scene = new GameScene(context, () => 0, 0);
     await scene.enter({ map });
+    scene._setWildEnabled(false);
     scene.render();
     const layout = (scene as unknown as {
       boardRenderer: { getLayout(): { originX: number; originY: number; cellSize: number } };
@@ -1216,6 +1221,119 @@ describe("GameScene + 매치 이펙트", () => {
     // 외부에서 검증할 안전한 방법은 effects._size() — pair는 항상 ParticleBurst 1 + ScorePopup 1 = 2.
     const effects = (scene as unknown as { effects: { _size(): number } }).effects;
     assertEqual(effects._size(), 2);
+  });
+});
+
+describe("GameScene + 만능(?) 블럭", () => {
+  test("trySpawnWildcard: 비-장애물 비-빈칸 셀을 만능으로 변환", async () => {
+    const r = makeFakeRenderer();
+    const { context, audioCalls } = makeCtx(r);
+    const scene = new GameScene(context, () => 0, 0);
+    await scene.enter({ map: tinyMap() });
+    scene._setWildEnabled(false);
+    const before = (scene as unknown as { board: import("../src/game/Board").Board }).board;
+    assertFalse(before.isWildcard(0, 0) || before.isWildcard(1, 0));
+    const ok = scene._trySpawnWildcard();
+    assertTrue(ok);
+    const after = (scene as unknown as { board: import("../src/game/Board").Board }).board;
+    assertTrue(after.isWildcard(0, 0) || after.isWildcard(1, 0));
+    // 사운드 + 이펙트 동시 발생
+    assertTrue(audioCalls.includes("wild"));
+    const effects = (scene as unknown as { effects: { _size(): number } }).effects;
+    assertTrue(effects._size() >= 3); // ParticleBurst + Ring + Popup
+  });
+
+  test("stuck 회복: 매치 후 무한루프 1번이라도 매치 가능 — 게임 종료 안 됨", async () => {
+    const r = makeFakeRenderer();
+    const { context, transitions } = makeCtx(r);
+    // RNG=0 → 모두 1로 리필 → stuck. 만능 회복 활성 (기본값).
+    const scene = new GameScene(context, () => 0, 0);
+    await scene.enter({
+      map: {
+        ...tinyMap(),
+        cols: 2,
+        rows: 2,
+        initialBoard: [
+          [3, 7],
+          [1, 1],
+        ],
+      },
+    });
+    scene.render();
+    const layout = (scene as unknown as { boardRenderer: { getLayout(): any } }).boardRenderer.getLayout();
+    const a = { x: layout.originX + layout.cellSize / 2, y: layout.originY + layout.cellSize / 2 };
+    const b = { x: layout.originX + layout.cellSize + layout.cellSize / 2, y: layout.originY + layout.cellSize / 2 };
+    scene.onPointerDown!(a.x, a.y);
+    scene.onPointerMove!(b.x, b.y);
+    scene.onPointerUp!(b.x, b.y);
+    // 매치 → stuck → 만능 스폰 → 게임 계속.
+    assertFalse(scene._isEnded());
+    assertEqual(transitions.filter((t) => t.next === "result").length, 0);
+    // 보드에 만능이 1개 이상 존재
+    const board = (scene as unknown as { board: import("../src/game/Board").Board }).board;
+    let wild = 0;
+    for (let rr = 0; rr < 2; rr++) {
+      for (let cc = 0; cc < 2; cc++) {
+        if (board.isWildcard(cc, rr)) wild++;
+      }
+    }
+    assertTrue(wild >= 1);
+  });
+
+  test("자동 스폰 타이머: 충분히 시간이 흐르면 한 개 스폰", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    // RNG=0.5 고정 → 인터벌 = 12000 + 0.5 * (25000-12000) = 18500ms
+    const scene = new GameScene(context, () => 0.5, 0);
+    await scene.enter({
+      map: {
+        ...tinyMap(),
+        cols: 3,
+        rows: 1,
+        initialBoard: [[1, 2, 7]],
+        timeLimit: 999,
+      },
+    });
+    const board = (scene as unknown as { board: import("../src/game/Board").Board }).board;
+    // 초기엔 만능 없음
+    let wild = 0;
+    for (let cc = 0; cc < 3; cc++) if (board.isWildcard(cc, 0)) wild++;
+    assertEqual(wild, 0);
+    // 25초 진행 → 인터벌(18.5s) 지나 1개 스폰
+    scene.update(25_000);
+    wild = 0;
+    for (let cc = 0; cc < 3; cc++) if (board.isWildcard(cc, 0)) wild++;
+    assertTrue(wild >= 1, `expected ≥1 wildcard after 25s, got ${wild}`);
+  });
+
+  test("wildEnabled=false: 자동 스폰 + 회복 모두 비활성", async () => {
+    const r = makeFakeRenderer();
+    const { context, transitions } = makeCtx(r);
+    const scene = new GameScene(context, () => 0, 0);
+    await scene.enter({
+      map: {
+        ...tinyMap(),
+        cols: 2,
+        rows: 2,
+        initialBoard: [
+          [3, 7],
+          [1, 1],
+        ],
+      },
+    });
+    scene._setWildEnabled(false);
+    scene.render();
+    const layout = (scene as unknown as { boardRenderer: { getLayout(): any } }).boardRenderer.getLayout();
+    const a = { x: layout.originX + layout.cellSize / 2, y: layout.originY + layout.cellSize / 2 };
+    const b = { x: layout.originX + layout.cellSize + layout.cellSize / 2, y: layout.originY + layout.cellSize / 2 };
+    scene.onPointerDown!(a.x, a.y);
+    scene.onPointerMove!(b.x, b.y);
+    scene.onPointerUp!(b.x, b.y);
+    // 만능 회복 비활성 → endGame
+    assertTrue(scene._isEnded());
+    assertEqual(transitions[transitions.length - 1].next, "result");
+    // 자동 스폰 타이머 = Infinity
+    assertEqual(scene._getNextWildSpawnMs(), Number.POSITIVE_INFINITY);
   });
 });
 
@@ -1398,6 +1516,7 @@ describe("GameScene + 장애물", () => {
     // refill RNG=0 → 새 셀 항상 1
     const scene = new GameScene(context, () => 0, 0);
     await scene.enter({ map: obstacleMap() });
+    scene._setWildEnabled(false);
     scene.render();
     const layout = (scene as unknown as {
       boardRenderer: { getLayout(): { originX: number; originY: number; cellSize: number } };
