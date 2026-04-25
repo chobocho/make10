@@ -25,8 +25,9 @@ App -> FSM : onPointerMove(x, y)
 FSM -> GS : onPointerMove(x, y)
 GS -> Sel : extend(col, row)
 note right of Sel
-  4-인접만, 길이 ≤ 3,
-  isWildSum10 으로 (W,X)/(W,W)/(W,X,Y) 허용
+  4-adjacent only, length <= 3
+  isWildSum10 allows
+  (W,X) / (W,W) / (W,X,Y)
 end note
 
 User -> PI : touchend / mouseup
@@ -36,24 +37,24 @@ FSM -> GS : onPointerUp(x, y)
 GS -> Sel : commit() : { positions, sum, valid }
 
 alt valid match
-  GS -> Board : isBonus(c,r) for each pos\n→ hitBonus
+  GS -> Board : isBonus(c,r) for each pos\n=> hitBonus
   GS -> Board : applyMatch(positions)
   note right of Board
-    파괴 시 wild/bonus 플래그도 false 로 정리
-    멀티라이프: 양쪽 lives≥2 → min 데미지
+    on destroy: also clears wild/bonus flags
+    multilife: both lives>=2 -> min damage
   end note
 
-  GS -> GS : chainCount = (Δt ≤ 1s) ? prev+1 : 1\nchainBonus = min(250, 50·(chain-1))
-  GS -> GS : base = 100 (pair) / 300 (triple)\ntotal = (base + chainBonus) × (hitBonus ? 2 : 1)
+  GS -> GS : chainCount = (Δt <= 1s) ? prev+1 : 1\nchainBonus = min(250, 50 * (chain - 1))
+  GS -> GS : base = 100 (pair) / 300 (triple)\ntotal = (base + chainBonus) * (hitBonus ? 2 : 1)
 
   GS -> Fx : spawnRemoval(destroyed, layout, kind,\n  { chainBonus?, scoreOverride?, multiplier? })
   note right of Fx
-    파티클 + 점수 팝업 + (3셀) 링
-    multiplier>1 → 무지개 팔레트 + ×2 배지
-    chainBonus>0 → ⚡ +50 x2 배지 추가
+    particles + score popup + (triple) ring
+    multiplier > 1 -> rainbow palette + x2 badge
+    chainBonus > 0 -> "+50 x2" lightning badge
   end note
 
-  GS -> Board : applyGravity()  // wild/bonus 보존, obstacle 통과
+  GS -> Board : applyGravity()  // wild/bonus preserved, falls through obstacles
   GS -> Board : refill(rng)
   GS -> GS : syncBonusCellAfterMutation()
   GS -> Hint : clear()
@@ -61,40 +62,40 @@ alt valid match
   GS -> Audio : play("remove")
 
   GS -> Board : findValidCombination()  // wildcard-aware
-  alt no valid combo & wildEnabled
-    GS -> Board : convertToWildcard(c, r)  // 임의 비-장애물·비-만능 셀
+  alt no valid combo and wildEnabled
+    GS -> Board : convertToWildcard(c, r)  // pick a non-obstacle, non-wild cell
     GS -> Fx : spawnWildcardEntrance(c, r, layout)
     GS -> Audio : play("wild")
-    GS -> Board : findValidCombination() (재검사)
-    alt 여전히 없음
+    GS -> Board : findValidCombination() (recheck)
+    alt still no combo
       GS -> GS : endGame("stuck")
       GS -> FSM : transition("result", result)
     end
-  else 매치 가능
+  else combo exists
   end
 
-else invalid (≥2 cells, sum != 10)
+else invalid (>=2 cells, sum != 10)
   GS -> Audio : play("invalid")
 end
 
-== 백그라운드 타이머 (update 루프) ==
+== Background timers (update loop) ==
 App -> GS : update(deltaMs)
-GS -> GS : elapsedMs += deltaMs (활성 시간만)
+GS -> GS : elapsedMs += deltaMs (active time only)
 
-alt nextWildSpawnMs ≤ 0 (12-25s 인터벌)
-  GS -> Board : convertToWildcard(임의 셀)
+alt nextWildSpawnMs <= 0 (12-25s interval)
+  GS -> Board : convertToWildcard(random cell)
   GS -> Fx : spawnWildcardEntrance / Audio: "wild"
   GS -> GS : nextWildSpawnMs = pickNextWildInterval()
 end
 
-alt !bonusCell && nextBonusSpawnMs ≤ 0 (10-12s 인터벌)
-  GS -> Board : markBonus(임의 셀)
+alt !bonusCell and nextBonusSpawnMs <= 0 (10-12s interval)
+  GS -> Board : markBonus(random cell)
   GS -> GS : bonusCell = { col, row, expireAtMs = elapsedMs + rand(2-5s) }
   GS -> Fx : spawnBonusEntrance / Audio: "bonus"
 end
 
-alt bonusCell && elapsedMs ≥ expireAtMs
-  GS -> Board : unmarkBonus(c, r)  // ×2 윈도우 만료, 셀은 일반 셀로 복귀
+alt bonusCell and elapsedMs >= expireAtMs
+  GS -> Board : unmarkBonus(c, r)  // x2 window expired; cell becomes a normal cell
   GS -> GS : bonusCell = null
 end
 @enduml

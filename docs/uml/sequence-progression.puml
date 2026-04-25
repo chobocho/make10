@@ -1,5 +1,5 @@
 @startuml sequence-progression
-title Level Progression — Sequential Lock + Page Gating + ★3 Hint Carryover
+title Level Progression — Sequential Lock + Page Gating + Three-Star Hint Carryover
 skinparam responseMessageBelowArrow true
 actor User
 participant "TitleScene" as Title
@@ -8,71 +8,71 @@ participant "ResultScene" as RS
 participant "SaveManager" as SM
 participant "IndexedDB\n(progress + meta)" as IDB
 
-== Title 진입 — 페이지 + 잠금 상태 표시 ==
+== Title enter — display pages and lock state ==
 User -> Title : enter
-Title -> SM : list() (progress 전체)
+Title -> SM : list() (all progress records)
 SM -> IDB : transaction(readonly)
 IDB --> SM : [{ mapId, stars }, ...]
 SM --> Title : records
-Title -> Title : page = 1 (1-100 표시)
+Title -> Title : page = 1 (shows 1-100)
 note right of Title
-  페이지 잠금:
-    page 2 → bestStars[100] ≥ 1
-    page 3 → bestStars[200] ≥ 1
-  맵 잠금:
-    mapId N → bestStars[N-1] ≥ 1
-    (1번은 항상 해제)
+  Page lock:
+    page 2 unlocked iff bestStars[100] >= 1
+    page 3 unlocked iff bestStars[200] >= 1
+  Map lock:
+    map N unlocked iff bestStars[N-1] >= 1
+    (map 1 always unlocked)
 end note
 
-== 화살표로 페이지 이동 ==
+== Page navigation via arrow ==
 User -> Title : tap right arrow
-alt 잠금 해제됨
+alt unlocked
   Title -> Title : page++ , scrollY = 0
-else 잠금
-  note right of Title : 무시 (사운드 없음)
+else locked
+  note right of Title : ignore (no sound)
 end
 
-== 맵 카드 탭 ==
+== Map card tap ==
 User -> Title : tap map N
 alt isMapUnlocked(N)
   Title -> GS : transition("game", { map })
-else 잠김
-  note right of Title : 자물쇠 표시, 무시
+else locked
+  note right of Title : padlock shown, ignored
 end
 
-== GameScene 진입 (신규) — hint 보충 적용 ==
+== GameScene enter (fresh) — apply hint carryover ==
 GS -> SM : consumeHintCarryover()
-SM -> IDB : meta["hint_carryover"] → 0 으로 리셋
-SM --> GS : extraHints (예: 1)
+SM -> IDB : meta["hint_carryover"] -> reset to 0
+SM --> GS : extraHints (e.g., 1)
 GS -> GS : hints = map.hintCount + extraHints
 note right of GS
-  mapId % 8 === 0 이면
-  hints = max(hints, 3) "8마다 채우기"
+  if mapId % 8 == 0:
+    hints = max(hints, 3) "fill every 8 levels"
 end note
 GS -> GS : new Hint(board, hints)
 
-== 게임 종료 → ResultScene ==
+== Game ends -> ResultScene ==
 GS -> RS : transition("result", { score, stars, mapId, ... })
-alt cleared (stars ≥ 1)
+alt cleared (stars >= 1)
   RS -> SM : saveBest(record)
   SM -> IDB : progress.put(mapId, ...)
-  alt stars === 3
+  alt stars == 3
     RS -> SM : addHintCarryover()
     SM -> IDB : meta["hint_carryover"] += 1
-    note right of RS : 다음 진입 시 자동 +1
+    note right of RS : +1 auto-applied at next entry
   end
 end
 
-== 다음 → / 다시하기 ==
-User -> RS : tap "다음"
-alt hasNext (cleared && N < maxMapId)
+== Next / Retry ==
+User -> RS : tap "Next"
+alt hasNext (cleared and N < maxMapId)
   RS -> GS : transition("game", { map: N+1 })
-  GS -> SM : consumeHintCarryover() (위 흐름 반복)
-else 비활성
-  note right of RS : 실패/마지막 맵 → 무시
+  GS -> SM : consumeHintCarryover() (loop above)
+else disabled
+  note right of RS : failed run or last map -> ignored
 end
 
-User -> RS : tap "🏠 타이틀"
+User -> RS : tap "Title"
 RS -> Title : transition("title")
-Title -> SM : list() (재로드 — 새 별/잠금 반영)
+Title -> SM : list() (reload — reflects new stars / unlocks)
 @enduml

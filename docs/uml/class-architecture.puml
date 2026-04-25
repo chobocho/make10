@@ -56,7 +56,7 @@ package "game logic (pure)" {
     -wildcards: boolean[][]
     -bonus: boolean[][]
     +applyMatch(positions): number
-    +applyGravity()  // wild/bonus 보존, obstacle 통과
+    +applyGravity()  // wild/bonus preserved, falls through obstacles
     +refill(rng)
     +convertToWildcard(c,r) / markBonus(c,r) / unmarkBonus
     +isObstacle / isWildcard / isBonus
@@ -79,8 +79,8 @@ package "game logic (pure)" {
   Hint --> Board
   note bottom of Selector
     isWildSum10:
-      W=만능 셀 수, S=고정합
-      (10-S) ∈ [W, 9·W] → 매치
+      W = wildcard count, S = sum of fixed cells
+      match valid iff (10 - S) ∈ [W, 9·W]
   end note
 }
 
@@ -89,7 +89,7 @@ package "renderer" {
   class BoardRenderer {
     +setLayout(l)
     +draw(board, options)
-    ' phaseMs 옵션으로 보너스 무지개 애니메이션
+    ' phaseMs option drives bonus rainbow animation
   }
   class UIRenderer {
     +drawHUD(layout, state)
@@ -121,8 +121,8 @@ package "data" {
     +timeLimit, hintCount
     +starThresholds[3]
     +initialBoard, initialLives?
-    +initialObstacles?  // 101+ 도입
-    +initialWildcards?  // 동적 스폰용; 정적 맵은 미사용
+    +initialObstacles?  // introduced at id >= 101
+    +initialWildcards?  // dynamic spawn target; static maps unused
   }
   class MapLoader {
     +loadMap(id) / validateMap(input)

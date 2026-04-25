@@ -192,7 +192,7 @@ npx ts-node tools/gen-maps.ts 1 300   # map001 ~ map300 재생성
 
 ## Architecture
 
-PlantUML 소스는 [`docs/uml/`](./docs/uml/) 에 있고, 아래 PNG는 `plantuml -tpng docs/uml/*.puml` 로 재생성합니다.
+PlantUML 소스는 [`docs/uml/`](./docs/uml/) 에 있고, 아래 PNG는 `plantuml -tpng docs/uml/*.puml` 로 재생성합니다. 다이어그램 본문 라벨/노트는 모두 **영어**, 캡션은 한국어로 유지합니다.
 
 ### Class diagram
 
