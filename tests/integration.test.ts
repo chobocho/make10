@@ -232,7 +232,7 @@ describe("Integration: Title → Game → Result", () => {
     assertEqual(fsm.getCurrentId(), "game");
   });
 
-  test("타이머 만료 → reason=timeup 결과에서 next 가능", async () => {
+  test("타이머 만료(미클리어) → next 비활성: 클릭해도 result에 머문다", async () => {
     const { ctx, fsm } = buildContext((id) => slowFixture(id));
     fsm.register("title", new TitleScene(ctx));
     fsm.register("game", new GameScene(ctx, Math.random, 0));
@@ -253,7 +253,8 @@ describe("Integration: Title → Game → Result", () => {
     fsm.onPointerUp(btns.next.x + 1, btns.next.y + 1);
     await Promise.resolve();
     await Promise.resolve();
-    assertEqual(fsm.getCurrentId(), "game");
+    // 미클리어 시 다음 맵 진입 차단 — result 씬에 그대로 머물러야 함.
+    assertEqual(fsm.getCurrentId(), "result");
   });
 
   test("클리어 → ResultScene saveBest → TitleScene bestStars 갱신", async () => {

@@ -276,6 +276,24 @@
   - 3→1→6 다른 ㄱ자 경로도 정답 인식
   - phase 5 finale 텍스트 탭 → 종료 + 완료 마킹
 
+## 2026-04-25 — 이슈 #24 레벨 순차 잠금
+
+**변경**: 직전 맵을 ★1 이상으로 클리어해야 다음 맵에 진입 가능. map 1은 항상 열림.
+
+- **TitleScene** (`src/scenes/TitleScene.ts`)
+  - `isUnlocked(mapId)` 추가 — `mapId === 1` 또는 `bestStars[mapId-1] >= 1` 일 때 true.
+  - 잠긴 맵 카드: 회색 배경/테두리 + 별 자리에 🔒 이모지 (별점 의미 없음).
+  - 잠긴 카드 탭 시 `loadMap`/`transition` 호출하지 않음 (사운드도 미발생).
+  - 테스트 접근자 `_isUnlocked(mapId)` 노출.
+- **ResultScene** (`src/scenes/ResultScene.ts`)
+  - `hasNext()`에 `result.cleared` 조건 추가 — 실패 결과(timeup/stuck)에서는 다음 버튼 비활성.
+  - 비활성 시 기존 `COLOR_BTN_DISABLED` 스타일이 그대로 적용된다.
+- **테스트** (`tests/titleResultScene.test.ts`, `tests/integration.test.ts`)
+  - 신규 5건: 최초 진입 시 1번만 해제 / 클리어 후 다음 맵 해제 / stars=0은 미해제 / 잠금 카드 탭 무시 / 실패 후 next 무시.
+  - 기존 `타이머 만료 → next 가능` 테스트는 정책에 맞게 `next 비활성: result에 머문다`로 갱신.
+  - 기존 `스크롤 후 버튼 탭` 테스트는 잠금 정책상 idx=12 진입을 위해 사전 12개 클리어 기록 주입.
+- 검증: 263/263 pass, 번들 96.9KB.
+
 ## 2026-04-25 — 인터랙티브 튜토리얼 (실습 단계 도입)
 
 **변경**: 텍스트 3슬라이드였던 튜토리얼을 4단계 인터랙티브로 업그레이드.

@@ -18,9 +18,12 @@ const COLOR_BTN_BG = "#ffffff";
 const COLOR_BTN_BG_PRESSED = "#f0ebe3";
 const COLOR_BTN_BG_CLEARED = "#eaf6e4";
 const COLOR_BTN_BG_CLEARED_PRESSED = "#d8ecce";
+const COLOR_BTN_BG_LOCKED = "#ece7df";
 const COLOR_BTN_BORDER = "#e2d6c3";
 const COLOR_BTN_BORDER_CLEARED = "#9bcf94";
+const COLOR_BTN_BORDER_LOCKED = "#cfc6b6";
 const COLOR_BTN_TEXT = "#3d4a5c";
+const COLOR_BTN_TEXT_LOCKED = "#a8a094";
 const COLOR_STAR_FILLED = "#f5a623";
 const COLOR_STAR_EMPTY = "#d6cdc2";
 const COLOR_SHADOW = "rgba(45, 50, 60, 0.10)";
@@ -159,7 +162,8 @@ export class TitleScene implements Scene {
       const mapId = i + 1;
       const stars = this.bestStars.get(mapId) ?? 0;
       const cleared = stars > 0;
-      const pressed = i === this.pressedIndex && !this.scrolling;
+      const locked = !this.isUnlocked(mapId);
+      const pressed = i === this.pressedIndex && !this.scrolling && !locked;
 
       // 소프트 그림자
       ctx.fillStyle = COLOR_SHADOW;
@@ -167,54 +171,67 @@ export class TitleScene implements Scene {
       ctx.fill();
 
       // 본체
-      ctx.fillStyle = pressed
-        ? cleared
-          ? COLOR_BTN_BG_CLEARED_PRESSED
-          : COLOR_BTN_BG_PRESSED
-        : cleared
-          ? COLOR_BTN_BG_CLEARED
-          : COLOR_BTN_BG;
+      ctx.fillStyle = locked
+        ? COLOR_BTN_BG_LOCKED
+        : pressed
+          ? cleared
+            ? COLOR_BTN_BG_CLEARED_PRESSED
+            : COLOR_BTN_BG_PRESSED
+          : cleared
+            ? COLOR_BTN_BG_CLEARED
+            : COLOR_BTN_BG;
       drawRoundRectPath(ctx, b.x, drawY, b.width, b.height, 14);
       ctx.fill();
 
       // 외곽선
-      ctx.strokeStyle = cleared ? COLOR_BTN_BORDER_CLEARED : COLOR_BTN_BORDER;
+      ctx.strokeStyle = locked
+        ? COLOR_BTN_BORDER_LOCKED
+        : cleared
+          ? COLOR_BTN_BORDER_CLEARED
+          : COLOR_BTN_BORDER;
       ctx.lineWidth = 2;
       drawRoundRectPath(ctx, b.x, drawY, b.width, b.height, 14);
       ctx.stroke();
 
       // 숫자
-      ctx.fillStyle = COLOR_BTN_TEXT;
+      ctx.fillStyle = locked ? COLOR_BTN_TEXT_LOCKED : COLOR_BTN_TEXT;
       ctx.font = `800 ${labelFont}px -apple-system, "Segoe UI", sans-serif`;
       ctx.fillText(String(mapId), b.x + b.width / 2, drawY + b.height * 0.42);
 
-      // 별 3개 (회색 + 채워짐)
-      const starFont = Math.round(b.height * 0.22);
-      ctx.font = `${starFont}px -apple-system, "Segoe UI Emoji", sans-serif`;
-      const starsY = drawY + b.height * 0.78;
-      const starGap = starFont * 0.1;
-      const starCx = b.x + b.width / 2;
-      // 세 별을 각각 개별 색으로 그려 채움/빔을 구분.
-      const displays: ReadonlyArray<{ ch: string; color: string }> = [
-        {
-          ch: stars >= 1 ? "★" : "☆",
-          color: stars >= 1 ? COLOR_STAR_FILLED : COLOR_STAR_EMPTY,
-        },
-        {
-          ch: stars >= 2 ? "★" : "☆",
-          color: stars >= 2 ? COLOR_STAR_FILLED : COLOR_STAR_EMPTY,
-        },
-        {
-          ch: stars >= 3 ? "★" : "☆",
-          color: stars >= 3 ? COLOR_STAR_FILLED : COLOR_STAR_EMPTY,
-        },
-      ];
-      const totalW = starFont * 3 + starGap * 2;
-      let sx = starCx - totalW / 2 + starFont / 2;
-      for (const d of displays) {
-        ctx.fillStyle = d.color;
-        ctx.fillText(d.ch, sx, starsY);
-        sx += starFont + starGap;
+      if (locked) {
+        // 별 자리에 자물쇠 한 개. 잠긴 맵은 별점 자체가 의미 없다.
+        const lockFont = Math.round(b.height * 0.26);
+        ctx.font = `${lockFont}px -apple-system, "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
+        ctx.fillStyle = COLOR_BTN_TEXT_LOCKED;
+        ctx.fillText("🔒", b.x + b.width / 2, drawY + b.height * 0.78);
+      } else {
+        // 별 3개 (회색 + 채워짐)
+        const starFont = Math.round(b.height * 0.22);
+        ctx.font = `${starFont}px -apple-system, "Segoe UI Emoji", sans-serif`;
+        const starsY = drawY + b.height * 0.78;
+        const starGap = starFont * 0.1;
+        const starCx = b.x + b.width / 2;
+        const displays: ReadonlyArray<{ ch: string; color: string }> = [
+          {
+            ch: stars >= 1 ? "★" : "☆",
+            color: stars >= 1 ? COLOR_STAR_FILLED : COLOR_STAR_EMPTY,
+          },
+          {
+            ch: stars >= 2 ? "★" : "☆",
+            color: stars >= 2 ? COLOR_STAR_FILLED : COLOR_STAR_EMPTY,
+          },
+          {
+            ch: stars >= 3 ? "★" : "☆",
+            color: stars >= 3 ? COLOR_STAR_FILLED : COLOR_STAR_EMPTY,
+          },
+        ];
+        const totalW = starFont * 3 + starGap * 2;
+        let sx = starCx - totalW / 2 + starFont / 2;
+        for (const d of displays) {
+          ctx.fillStyle = d.color;
+          ctx.fillText(d.ch, sx, starsY);
+          sx += starFont + starGap;
+        }
       }
     }
 
@@ -282,9 +299,11 @@ export class TitleScene implements Scene {
     if (idx < 0 || idx >= this.buttons.length) return;
     const logicalY = y + this.scrollY;
     if (!hitButton(this.buttons[idx], x, logicalY)) return;
+    const mapId = idx + 1;
+    if (!this.isUnlocked(mapId)) return;
     this.context.audio.ensureReady();
     this.context.audio.play("button");
-    void this.startMap(idx + 1);
+    void this.startMap(mapId);
   }
 
   onPointerCancel(): void {
@@ -305,6 +324,14 @@ export class TitleScene implements Scene {
     }
   }
 
+  /**
+   * 순차 잠금 정책: map 1은 항상 가능, 그 외는 직전 맵을 ★1 이상으로 클리어해야 가능.
+   */
+  private isUnlocked(mapId: number): boolean {
+    if (mapId <= 1) return true;
+    return (this.bestStars.get(mapId - 1) ?? 0) >= 1;
+  }
+
   // --- 테스트용 접근자 ---
   _getScrollY(): number {
     return this.scrollY;
@@ -314,6 +341,9 @@ export class TitleScene implements Scene {
   }
   _scrollBy(delta: number): void {
     this.scrollY = clamp(this.scrollY + delta, 0, this.maxScrollY);
+  }
+  _isUnlocked(mapId: number): boolean {
+    return this.isUnlocked(mapId);
   }
 }
 

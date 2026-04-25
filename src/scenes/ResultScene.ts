@@ -147,6 +147,7 @@ export class ResultScene implements Scene {
 
   private hasNext(): boolean {
     if (!this.result) return false;
+    if (!this.result.cleared) return false; // 순차 잠금: 실패 시 다음 맵 진입 차단
     return this.result.mapId < this.context.maxMapId;
   }
 

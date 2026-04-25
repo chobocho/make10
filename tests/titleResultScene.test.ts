@@ -184,8 +184,21 @@ describe("TitleScene", () => {
 
   test("스크롤 후 버튼 탭: 로지컬 좌표로 정확히 히트", async () => {
     const { ctx, loadCalls } = makeCtx(100);
+    // 잠금 정책 도입 후 idx=12(mapId=13)에 진입하려면 직전 12개를 클리어해야 한다.
+    for (let id = 1; id <= 12; id++) {
+      await ctx.saveManager.save({
+        mapId: id,
+        boardState: [],
+        score: 100,
+        stars: 1,
+        timeLeft: 30,
+        timestamp: 0,
+      });
+    }
     const scene = new TitleScene(ctx);
     scene.enter();
+    await Promise.resolve();
+    await Promise.resolve();
     scene.render();
     scene._scrollBy(500);
     const scrolled = scene._getScrollY();
@@ -299,6 +312,111 @@ describe("ResultScene", () => {
     await Promise.resolve();
     const rec = await ctx.saveManager.load(7);
     assertEqual(rec, null);
+  });
+});
+
+describe("TitleScene: 레벨 순차 잠금", () => {
+  test("최초 진입: map 1만 잠금 해제, 나머지는 잠금", async () => {
+    const { ctx } = makeCtx(10);
+    const scene = new TitleScene(ctx);
+    scene.enter();
+    await Promise.resolve();
+    await Promise.resolve();
+    assertTrue(scene._isUnlocked(1));
+    assertFalse(scene._isUnlocked(2));
+    assertFalse(scene._isUnlocked(10));
+  });
+
+  test("map 2 클리어(★1+) → map 3 잠금 해제", async () => {
+    const { ctx } = makeCtx(10);
+    await ctx.saveManager.save({
+      mapId: 1,
+      boardState: [],
+      score: 100,
+      stars: 2,
+      timeLeft: 30,
+      timestamp: 0,
+    });
+    await ctx.saveManager.save({
+      mapId: 2,
+      boardState: [],
+      score: 100,
+      stars: 1,
+      timeLeft: 30,
+      timestamp: 0,
+    });
+    const scene = new TitleScene(ctx);
+    scene.enter();
+    await Promise.resolve();
+    await Promise.resolve();
+    assertTrue(scene._isUnlocked(1));
+    assertTrue(scene._isUnlocked(2));
+    assertTrue(scene._isUnlocked(3));
+    assertFalse(scene._isUnlocked(4));
+  });
+
+  test("stars=0 기록은 클리어로 간주하지 않음 → 다음 맵 잠금 유지", async () => {
+    const { ctx } = makeCtx(10);
+    await ctx.saveManager.save({
+      mapId: 1,
+      boardState: [],
+      score: 10,
+      stars: 0,
+      timeLeft: 0,
+      timestamp: 0,
+    });
+    const scene = new TitleScene(ctx);
+    scene.enter();
+    await Promise.resolve();
+    await Promise.resolve();
+    assertFalse(scene._isUnlocked(2));
+  });
+
+  test("잠긴 맵 버튼 탭 → loadMap/transition 호출 안 함", async () => {
+    const { ctx, transitions, loadCalls } = makeCtx(10);
+    const scene = new TitleScene(ctx);
+    scene.enter();
+    await Promise.resolve();
+    scene.render();
+    const layout = computeMapGridLayout(480, 800, 10);
+    // index 1 = mapId 2 (잠금 상태)
+    const locked = layout.buttons[1];
+    scene.onPointerDown!(locked.x + locked.width / 2, locked.y + locked.height / 2);
+    scene.onPointerUp!(locked.x + locked.width / 2, locked.y + locked.height / 2);
+    await Promise.resolve();
+    await Promise.resolve();
+    assertEqual(loadCalls.length, 0);
+    assertEqual(transitions.length, 0);
+  });
+});
+
+describe("ResultScene: 미클리어 시 다음 맵 비활성", () => {
+  function lostResult(id = 3): GameResult {
+    return {
+      mapId: id,
+      mapName: `m${id}`,
+      cleared: false,
+      score: 50,
+      stars: 0,
+      timeLeft: 0,
+      reason: "timeup",
+      starThresholds: [100, 1000, 2000],
+    };
+  }
+
+  test("실패 결과: next 버튼 탭 무시 (loadMap 호출 안 함)", async () => {
+    const { ctx, loadCalls, transitions } = makeCtx(10);
+    const scene = new ResultScene(ctx);
+    scene.enter(lostResult(3));
+    scene.render();
+    const layout = computeResultButtonsLayout(480, 800);
+    const b = layout.next;
+    scene.onPointerDown!(b.x + 1, b.y + 1);
+    scene.onPointerUp!(b.x + 1, b.y + 1);
+    await Promise.resolve();
+    await Promise.resolve();
+    assertEqual(loadCalls.length, 0);
+    assertFalse(transitions.some((t) => t.next === "game"));
   });
 });
 
