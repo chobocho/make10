@@ -19,6 +19,8 @@ export interface ProgressRecord {
   readonly timeLeft: number;
   /** 세션 복원용 — 일시정지 시점의 남은 힌트 횟수. progress(최고 점수) 기록에서는 무시된다. */
   readonly hintsLeft?: number;
+  /** 세션 복원용 — 셀별 lives 배열 (boardState 와 차원 동일). 미설정이면 모두 1로 복원. */
+  readonly boardLives?: ReadonlyArray<ReadonlyArray<number>>;
   readonly timestamp: number;
 }
 

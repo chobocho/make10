@@ -123,7 +123,8 @@ export class GameScene implements Scene {
   private setupGame(resumeFrom?: ProgressRecord): void {
     if (!this.map) return;
     const initialBoard = resumeFrom?.boardState ?? this.map.initialBoard;
-    this.board = new Board(initialBoard);
+    const initialLives = resumeFrom?.boardLives ?? this.map.initialLives;
+    this.board = new Board(initialBoard, initialLives);
     this.selector = new Selector(this.board);
     this.timer = new Timer(this.map.timeLimit);
     if (resumeFrom) {
@@ -195,6 +196,7 @@ export class GameScene implements Scene {
     const record: ProgressRecord = {
       mapId: this.map.id,
       boardState: this.board.snapshot(),
+      boardLives: this.board.livesSnapshot(),
       score: this.score,
       stars: computeStars(this.score, this.map.starThresholds),
       timeLeft: this.timer.getRemainingSeconds(),
@@ -495,7 +497,7 @@ export class GameScene implements Scene {
     if (!this.selector || !this.board) return;
     const result = this.selector.commit();
     if (result.valid) {
-      this.board.clearCells(result.positions);
+      this.board.applyMatch(result.positions);
       this.board.applyGravity();
       this.board.refill(this.randomFn);
       this.hint?.clear();

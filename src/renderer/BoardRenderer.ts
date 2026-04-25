@@ -101,6 +101,19 @@ const COLOR_CELL_INVALID = "#ff8787";
 const COLOR_CELL_HINT = "#ffd666";
 const COLOR_TEXT = "#14213d";
 
+/**
+ * 멀티라이프 셀 배경색 — 적록 색맹을 고려한 단색조(파랑) 명도 그라데이션.
+ * lives 1은 일반 셀과 동일하므로 사용 안 함; index 0은 placeholder.
+ */
+const COLOR_CELL_LIFE: ReadonlyArray<string> = [
+  "",        // 0: 빈칸 (사용 안 함)
+  "#f5f6fa", // 1: 일반 (기본 흰)
+  "#d4ebf8", // 2: 연하늘
+  "#8cc1de", // 3: 하늘
+  "#4291bd", // 4: 중파랑
+  "#1e4d80", // 5: 네이비
+];
+
 export class BoardRenderer {
   private readonly renderer: CanvasRenderer;
   private layout: BoardLayout;
@@ -159,12 +172,17 @@ export class BoardRenderer {
         if (!board.inBounds(c, r)) continue;
         const value = board.getCell(c, r);
         if (value === 0) continue;
+        const lives = board.getLives(c, r);
 
-        let fill = COLOR_CELL;
+        let fill: string;
         if (inList(selection, c, r)) {
           fill = invalid ? COLOR_CELL_INVALID : COLOR_CELL_SELECTED;
         } else if (highlight && inList(highlight, c, r)) {
           fill = COLOR_CELL_HINT;
+        } else if (lives >= 2 && lives <= 5) {
+          fill = COLOR_CELL_LIFE[lives];
+        } else {
+          fill = COLOR_CELL;
         }
 
         const pad = 2;
@@ -173,6 +191,20 @@ export class BoardRenderer {
 
         ctx.fillStyle = COLOR_TEXT;
         ctx.fillText(CELL_EMOJIS[value] ?? String(value), x + size / 2, y + size / 2 + 2);
+
+        // 멀티라이프 셀: 좌상단에 lives 카운트 배지 (색맹 보조)
+        if (lives >= 2) {
+          const badgeFont = Math.max(10, Math.floor(size * 0.22));
+          ctx.font = `bold ${badgeFont}px -apple-system, sans-serif`;
+          ctx.textAlign = "left";
+          ctx.textBaseline = "top";
+          ctx.fillStyle = lives >= 4 ? "#ffffff" : "#1e4d80";
+          ctx.fillText(`x${lives}`, x + 4, y + 3);
+          // 폰트/정렬 복원
+          ctx.font = `${fontSize}px -apple-system, "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+        }
       }
     }
 

@@ -178,4 +178,78 @@ describe("생성된 맵 JSON 실제 검증 (전체 100개)", () => {
       }
     }
   });
+
+  test("id < 10: initialLives 필드 없음 (멀티라이프 미도입 구간)", () => {
+    for (let id = 1; id <= 9; id++) {
+      const m = parseMapJson(readMap(id));
+      assertEqual(m.initialLives, undefined);
+    }
+  });
+
+  test("id ≥ 10: initialLives 존재, 셀별 값은 [1..maxLife], 멀티라이프 셀 ≤ 15%", () => {
+    function maxLifeForId(id: number): number {
+      return Math.min(5, 1 + Math.floor(id / 10));
+    }
+    for (let id = 10; id <= MAP_COUNT; id++) {
+      const m = parseMapJson(readMap(id));
+      assertTrue(m.initialLives !== undefined, `map${id}: initialLives 누락`);
+      const maxLife = maxLifeForId(id);
+      let multi = 0;
+      let total = 0;
+      for (let r = 0; r < m.rows; r++) {
+        for (let c = 0; c < m.cols; c++) {
+          const lv = m.initialLives![r][c];
+          assertTrue(lv >= 1 && lv <= maxLife, `map${id} (${c},${r}): lives=${lv}`);
+          if (lv >= 2) multi++;
+          total++;
+        }
+      }
+      const ratio = multi / total;
+      assertTrue(ratio <= 0.15 + 1e-9, `map${id}: 멀티 비율 ${ratio.toFixed(3)} > 15%`);
+    }
+  });
+});
+
+describe("MapLoader — initialLives 검증", () => {
+  function baseMap(): unknown {
+    return {
+      id: 1,
+      name: "t",
+      cols: 2,
+      rows: 1,
+      timeLimit: 10,
+      hintCount: 0,
+      targetScore: 0,
+      starThresholds: [50, 150, 300],
+      initialBoard: [[3, 7]],
+    };
+  }
+
+  test("initialLives 미지정은 통과", () => {
+    assertTrue(validateMap(baseMap()));
+  });
+
+  test("initialLives 정상 (1=일반, 2~5=멀티)", () => {
+    assertTrue(validateMap({ ...(baseMap() as object), initialLives: [[3, 1]] }));
+    assertTrue(validateMap({ ...(baseMap() as object), initialLives: [[5, 5]] }));
+  });
+
+  test("initialLives 차원 불일치 거부", () => {
+    assertFalse(
+      validateMap({ ...(baseMap() as object), initialLives: [[1]] }), // 열 부족
+    );
+    assertFalse(
+      validateMap({ ...(baseMap() as object), initialLives: [[1, 1], [1, 1]] }), // 행 초과
+    );
+  });
+
+  test("initialLives 범위 위반 거부 (>5, 음수, 비정수)", () => {
+    assertFalse(validateMap({ ...(baseMap() as object), initialLives: [[6, 1]] }));
+    assertFalse(validateMap({ ...(baseMap() as object), initialLives: [[-1, 1]] }));
+    assertFalse(validateMap({ ...(baseMap() as object), initialLives: [[1.5, 1]] }));
+  });
+
+  test("initialLives 빈칸 정합성 — 비빈칸인데 lives=0 거부", () => {
+    assertFalse(validateMap({ ...(baseMap() as object), initialLives: [[0, 1]] }));
+  });
 });

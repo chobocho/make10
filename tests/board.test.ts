@@ -238,15 +238,179 @@ describe("Board", () => {
     ]);
   });
 
-  test("nonEmptyCells 순회", () => {
+  test("nonEmptyCells 순회 — value + lives 포함", () => {
     const b = new Board([
       [1, 0],
       [0, 2],
     ]);
     const cells = Array.from(b.nonEmptyCells());
     assertDeepEqual(cells, [
-      { col: 0, row: 0, value: 1 },
-      { col: 1, row: 1, value: 2 },
+      { col: 0, row: 0, value: 1, lives: 1 },
+      { col: 1, row: 1, value: 2, lives: 1 },
     ]);
+  });
+
+  // ---------- 멀티라이프(lives ≥ 2) ----------
+
+  test("initialLives 미지정: 모든 비빈칸 lives=1, 빈칸 lives=0", () => {
+    const b = new Board([
+      [1, 0],
+      [3, 7],
+    ]);
+    assertEqual(b.getLives(0, 0), 1);
+    assertEqual(b.getLives(1, 0), 0);
+    assertEqual(b.getLives(0, 1), 1);
+    assertEqual(b.getLives(1, 1), 1);
+  });
+
+  test("initialLives 지정 — lives 그대로 보존", () => {
+    const b = new Board(
+      [
+        [3, 7],
+        [4, 6],
+      ],
+      [
+        [3, 1],
+        [1, 2],
+      ],
+    );
+    assertEqual(b.getLives(0, 0), 3);
+    assertEqual(b.getLives(1, 0), 1);
+    assertEqual(b.getLives(0, 1), 1);
+    assertEqual(b.getLives(1, 1), 2);
+    assertDeepEqual(b.livesSnapshot(), [
+      [3, 1],
+      [1, 2],
+    ]);
+  });
+
+  test("initialLives: 차원 불일치/범위 위반/빈칸-lives 정합성 에러", () => {
+    // 행 수 불일치
+    assertThrows(() => new Board([[1, 2]], [[1]]));
+    // 열 수 불일치
+    assertThrows(() => new Board([[1, 2]], [[1]]));
+    // lives > 5
+    assertThrows(() => new Board([[1]], [[6]]));
+    // 음수
+    assertThrows(() => new Board([[1]], [[-1]]));
+    // 비빈칸인데 lives=0
+    assertThrows(() => new Board([[3]], [[0]]));
+    // 빈칸인데 lives>0
+    assertThrows(() => new Board([[0]], [[1]]));
+  });
+
+  test("applyMatch: 2셀 일반(lives=1) — 둘 다 즉시 제거", () => {
+    const b = new Board([[3, 7]]);
+    const destroyed = b.applyMatch([
+      [0, 0],
+      [1, 0],
+    ]);
+    assertEqual(destroyed, 2);
+    assertTrue(b.isEmpty(0, 0));
+    assertTrue(b.isEmpty(1, 0));
+  });
+
+  test("applyMatch: 2셀 한쪽만 멀티(lives=3) — 일반은 제거, 멀티는 lives -1", () => {
+    const b = new Board(
+      [[3, 7]],
+      [[3, 1]], // 좌:lives=3, 우:lives=1
+    );
+    const destroyed = b.applyMatch([
+      [0, 0],
+      [1, 0],
+    ]);
+    assertEqual(destroyed, 1);
+    assertEqual(b.getCell(0, 0), 3);
+    assertEqual(b.getLives(0, 0), 2); // 3 - 1 = 2
+    assertTrue(b.isEmpty(1, 0));
+  });
+
+  test("applyMatch: 2셀 양쪽 멀티 — min(lives) 만큼 양쪽 차감, 작은 쪽 제거", () => {
+    const b = new Board(
+      [[4, 6]],
+      [[5, 2]],
+    );
+    const destroyed = b.applyMatch([
+      [0, 0],
+      [1, 0],
+    ]);
+    assertEqual(destroyed, 1);
+    // 4(lives=5) - 2 = 3 살아있음
+    assertEqual(b.getLives(0, 0), 3);
+    assertEqual(b.getCell(0, 0), 4);
+    // 6(lives=2) - 2 = 0 제거
+    assertTrue(b.isEmpty(1, 0));
+  });
+
+  test("applyMatch: 2셀 양쪽 멀티 동등 lives — 둘 다 제거", () => {
+    const b = new Board(
+      [[3, 7]],
+      [[3, 3]],
+    );
+    const destroyed = b.applyMatch([
+      [0, 0],
+      [1, 0],
+    ]);
+    assertEqual(destroyed, 2);
+    assertTrue(b.isEmpty(0, 0));
+    assertTrue(b.isEmpty(1, 0));
+  });
+
+  test("applyMatch: 3셀 매치 — 항상 셀당 1 데미지 (특수 규칙 미적용)", () => {
+    const b = new Board(
+      [[2, 3, 5]],
+      [[3, 3, 3]], // 셋 다 멀티
+    );
+    const destroyed = b.applyMatch([
+      [0, 0],
+      [1, 0],
+      [2, 0],
+    ]);
+    assertEqual(destroyed, 0); // 모두 lives 3→2 살아있음
+    assertEqual(b.getLives(0, 0), 2);
+    assertEqual(b.getLives(1, 0), 2);
+    assertEqual(b.getLives(2, 0), 2);
+  });
+
+  test("applyGravity: 멀티라이프 셀의 lives도 함께 낙하", () => {
+    const b = new Board(
+      [
+        [3, 7],
+        [0, 6],
+        [0, 0],
+      ],
+      [
+        [4, 1],
+        [0, 3],
+        [0, 0],
+      ],
+    );
+    b.applyGravity();
+    // 좌측 열: lives=4의 3이 맨 아래로
+    assertEqual(b.getCell(0, 2), 3);
+    assertEqual(b.getLives(0, 2), 4);
+    // 우측 열: 7(lives=1) → 6(lives=3) 순으로 아래쪽
+    assertEqual(b.getCell(1, 1), 7);
+    assertEqual(b.getLives(1, 1), 1);
+    assertEqual(b.getCell(1, 2), 6);
+    assertEqual(b.getLives(1, 2), 3);
+  });
+
+  test("refill: 새로 채워지는 셀은 항상 lives=1", () => {
+    const b = new Board(
+      [
+        [3, 0],
+        [0, 7],
+      ],
+      [
+        [4, 0],
+        [0, 1],
+      ],
+    );
+    b.refill(() => 0.5);
+    assertEqual(b.getLives(0, 0), 4); // 기존 멀티 보존
+    assertEqual(b.getLives(1, 0), 1); // 새 셀
+    assertEqual(b.getLives(0, 1), 1); // 새 셀
+    assertEqual(b.getLives(1, 1), 1);
   });
 });

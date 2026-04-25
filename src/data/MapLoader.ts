@@ -14,6 +14,11 @@ export interface MapData {
   /** 별 3개 단계 임계값. 엄격히 오름차순 [★1, ★2, ★3]. */
   readonly starThresholds: readonly [number, number, number];
   readonly initialBoard: ReadonlyArray<ReadonlyArray<number>>;
+  /**
+   * 초기 보드의 셀별 lives (1=일반, 2~5=멀티라이프).
+   * 미지정 시 모든 비빈칸은 lives=1로 간주. id ≥ 10 맵에서 사용.
+   */
+  readonly initialLives?: ReadonlyArray<ReadonlyArray<number>>;
 }
 
 function isPosInt(v: unknown): v is number {
@@ -42,6 +47,23 @@ export function validateMap(input: unknown): input is MapData {
     if (!Array.isArray(row) || row.length !== (o.cols as number)) return false;
     for (const v of row) {
       if (!Number.isInteger(v) || v < 0 || v > 9) return false;
+    }
+  }
+  // initialLives 옵셔널 — 차원과 셀별 정합성(빈칸=0, 비빈칸=1~5) 엄격 검증
+  if (o.initialLives !== undefined) {
+    if (!Array.isArray(o.initialLives)) return false;
+    if (o.initialLives.length !== (o.rows as number)) return false;
+    const board = o.initialBoard as number[][];
+    for (let r = 0; r < (o.rows as number); r++) {
+      const lr = (o.initialLives as unknown[])[r];
+      if (!Array.isArray(lr) || lr.length !== (o.cols as number)) return false;
+      for (let c = 0; c < (o.cols as number); c++) {
+        const lv = lr[c];
+        if (!Number.isInteger(lv) || lv < 0 || lv > 5) return false;
+        const gv = board[r][c];
+        if (gv === 0 && lv !== 0) return false;
+        if (gv !== 0 && lv < 1) return false;
+      }
     }
   }
   return true;

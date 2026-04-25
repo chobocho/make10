@@ -261,6 +261,38 @@
     - 가시 영역 밖 버튼은 컬링으로 생략.
 - 테스트 4건 추가 (100 맵 시 maxScrollY>0, 드래그 스크롤로 탭 취소, 미세 이동은 탭 유지, 스크롤 후 탭 정확히 히트). 누적 **177/177 pass**.
 
+## 2026-04-25 — 멀티라이프 블럭 도입 (id ≥ 10)
+
+**규칙**: id 10부터 보드 일부 셀이 lives 2~5의 멀티라이프 블럭이 되어, 매치마다 lives -1 되고 0이 되어야 제거된다. 색맹 접근성을 고려해 파랑 단색조 명도 그라데이션 + 좌상단 lives 배지로 표시.
+
+- **출현 규칙**:
+  - id < 10: 멀티라이프 없음(기존과 동일).
+  - 최대 lives = `min(5, 1 + floor(id/10))` → 10s=2, 20s=3, 30s=4, 40s=5+.
+  - 초기 보드 셀의 15% 이하 비율로 멀티라이프 셀 배치(난이도 상승에 따라 비율도 5%→15%로 증가). 리필은 항상 lives=1.
+- **데미지 규칙**:
+  - 2셀 매치, 양쪽 모두 lives ≥ 2: damage = `min(A.lives, B.lives)`. 양쪽에서 그만큼 차감 → 작은 쪽 즉시 제거, 큰 쪽 잔여만큼 살아남음(같으면 둘 다 제거).
+  - 그 외(2셀 한쪽만 멀티 / 3셀 매치): 셀당 1 데미지, 0 도달 셀만 제거.
+  - 점수: 매치당 +100/+250 동일 (데미지든 제거든 무관).
+- **시각화**:
+  - 색상 매핑(lives → 배경): 1=흰, 2=`#d4ebf8`, 3=`#8cc1de`, 4=`#4291bd`, 5=`#1e4d80`.
+  - 좌상단 `xN` 텍스트 배지로 lives 카운트 표시 (색맹 보조 — 명도 외에도 텍스트로 명확).
+- **데이터 스키마**:
+  - `MapData.initialLives?: number[][]` 옵셔널 필드. 미지정이면 모두 1.
+  - `validateMap`: 차원/[1..5] 범위/빈칸-lives 정합성 엄격 검증.
+  - `ProgressRecord.boardLives?` 추가 — 세션 복원 시 lives 보존.
+- **Board 변경**:
+  - 평행 `lives` 그리드 추가 (grid와 차원 동일).
+  - `applyMatch(positions): number` 신규 — 위 데미지 규칙 적용, 제거된 셀 수 반환.
+  - `applyGravity` / `refill` 이 lives 도 함께 처리. `refill` 은 새 셀에 lives=1 부여.
+  - `getLives`, `livesSnapshot` 신규.
+  - `nonEmptyCells` 결과에 `lives` 필드 추가.
+- **GameScene**: `clearCells` → `applyMatch` 로 교체. 세션 저장 시 `livesSnapshot` 포함, 복원 시 Board 생성자에 전달.
+- **gen-maps.ts**: `maxLifeForId` + `genInitialLives` 추가. id 10~100 재생성 (mulberry32 시드 동일하므로 보드 face value는 결정적).
+- **테스트 (216/216 pass)**:
+  - `board.test.ts` 9건 — initialLives 검증/applyMatch 분기/중력·리필 lives 보존.
+  - `mapLoader.test.ts` 7건 — initialLives 옵셔널 검증 + 100개 맵 라이브 비율 ≤ 15% 회귀.
+  - `gameScene.test.ts` 3건 — 멀티+일반 매치/양쪽 멀티 매치/세션 boardLives 보존.
+
 ## 2026-04-25 — 진행 중 게임 자동 저장/복구 (탭 전환 + 브라우저 종료 대응)
 
 **요청**: 게임 도중 다른 창으로 이동하거나 브라우저를 종료한 뒤 다시 열면, 이어하기/다시하기/메인 버튼이 있는 일시정지 팝업이 떠야 함.

@@ -644,6 +644,102 @@ describe("GameScene", () => {
     assertEqual(await saveManager.loadSession(99), null, "메인으로 세션 폐기");
   });
 
+  test("멀티라이프 매치: 일반(lives=1) + 멀티(lives=3) → 일반 제거, 멀티 lives=2 잔존", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    const scene = new GameScene(context, () => 0.5, 0);
+    await scene.enter({
+      map: {
+        id: 99,
+        name: "multi-test",
+        cols: 2,
+        rows: 1,
+        timeLimit: 60,
+        hintCount: 0,
+        targetScore: 0,
+        starThresholds: [50, 150, 300],
+        initialBoard: [[3, 7]],
+        initialLives: [[3, 1]],
+      },
+    });
+    scene.render();
+    const layout = (scene as unknown as { boardRenderer: { getLayout(): any } }).boardRenderer.getLayout();
+    const a = { x: layout.originX + layout.cellSize / 2, y: layout.originY + layout.cellSize / 2 };
+    const b = { x: layout.originX + layout.cellSize + layout.cellSize / 2, y: layout.originY + layout.cellSize / 2 };
+    scene.onPointerDown!(a.x, a.y);
+    scene.onPointerMove!(b.x, b.y);
+    scene.onPointerUp!(b.x, b.y);
+    // 점수 부여 (매치 자체는 성공)
+    assertTrue(scene._getScore() >= 100);
+    // 좌측(3, lives=3): 매치 후 lives=2 살아있음, value=3 유지
+    const board = (scene as unknown as { board: { getCell(c: number, r: number): number; getLives(c: number, r: number): number } }).board;
+    assertEqual(board.getCell(0, 0), 3);
+    assertEqual(board.getLives(0, 0), 2);
+    // 우측은 제거 후 리필되어 새 값(=5, RNG=0.5 → 1+floor(0.5*9)=5), lives=1
+    assertEqual(board.getLives(1, 0), 1);
+  });
+
+  test("멀티라이프 매치: 양쪽 멀티(4,2) → min=2 만큼 양쪽 차감, 작은 쪽 제거", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    const scene = new GameScene(context, () => 0.5, 0);
+    await scene.enter({
+      map: {
+        id: 99,
+        name: "both-multi",
+        cols: 2,
+        rows: 1,
+        timeLimit: 60,
+        hintCount: 0,
+        targetScore: 0,
+        starThresholds: [50, 150, 300],
+        initialBoard: [[4, 6]],
+        initialLives: [[4, 2]],
+      },
+    });
+    scene.render();
+    const layout = (scene as unknown as { boardRenderer: { getLayout(): any } }).boardRenderer.getLayout();
+    const a = { x: layout.originX + layout.cellSize / 2, y: layout.originY + layout.cellSize / 2 };
+    const b = { x: layout.originX + layout.cellSize + layout.cellSize / 2, y: layout.originY + layout.cellSize / 2 };
+    scene.onPointerDown!(a.x, a.y);
+    scene.onPointerMove!(b.x, b.y);
+    scene.onPointerUp!(b.x, b.y);
+    const board = (scene as unknown as { board: { getCell(c: number, r: number): number; getLives(c: number, r: number): number } }).board;
+    // 좌측(4, lives=4): 4-2=2 잔여
+    assertEqual(board.getCell(0, 0), 4);
+    assertEqual(board.getLives(0, 0), 2);
+    // 우측(6, lives=2): 제거 후 리필
+    assertEqual(board.getLives(1, 0), 1);
+  });
+
+  test("세션 저장/복원: boardLives 보존", async () => {
+    const r = makeFakeRenderer();
+    const { context, saveManager } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 0);
+    await scene.enter({
+      map: {
+        id: 99,
+        name: "session-lives",
+        cols: 2,
+        rows: 1,
+        timeLimit: 60,
+        hintCount: 0,
+        targetScore: 0,
+        starThresholds: [50, 150, 300],
+        initialBoard: [[4, 6]],
+        initialLives: [[3, 2]],
+      },
+    });
+    scene.render();
+    scene.pauseGame();
+    await Promise.resolve();
+    const rec = await saveManager.loadSession(99);
+    assertTrue(rec !== null);
+    assertTrue(rec!.boardLives !== undefined);
+    assertEqual(rec!.boardLives![0][0], 3);
+    assertEqual(rec!.boardLives![0][1], 2);
+  });
+
   test("무효 선택 시 invalid 사운드", async () => {
     const r = makeFakeRenderer();
     const { context, audioCalls } = makeCtx(r);
