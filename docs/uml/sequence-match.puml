@@ -45,7 +45,7 @@ alt valid match
   end note
 
   GS -> GS : chainCount = (Δt <= 1s) ? prev+1 : 1\nchainBonus = min(250, 50 * (chain - 1))
-  GS -> GS : base = 100 (pair) / 300 (triple)\ntotal = (base + chainBonus) * (hitBonus ? 2 : 1)
+  GS -> GS : product = ∏ value(p)  // wildcard counts as 5\nbase = product * (pair ? 5 : 12)\ntotal = (base + chainBonus) * (hitBonus ? 2 : 1)
 
   GS -> Fx : spawnRemoval(destroyed, layout, kind,\n  { chainBonus?, scoreOverride?, multiplier? })
   note right of Fx

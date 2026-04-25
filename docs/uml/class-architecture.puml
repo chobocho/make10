@@ -36,6 +36,12 @@ package "scenes" {
     -nextWildSpawnMs / nextBonusSpawnMs
     +pauseGame() / resumeGame() / restartMap()
   }
+  note right of GameScene
+    score per match = product(values) * mult
+    pair mult = 5, triple mult = 12
+    wildcard counts as 5 in the product
+    then + chainBonus, then * (bonus ? 2 : 1)
+  end note
   class ResultScene
   class TutorialOverlay {
     -phase: number

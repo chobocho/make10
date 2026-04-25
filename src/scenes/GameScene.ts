@@ -54,8 +54,11 @@ export interface GameResult {
   readonly starThresholds: readonly [number, number, number];
 }
 
-const SCORE_PAIR = 100;
-const SCORE_TRIPLE = 300;
+/** 매치 점수 = 셀 값들의 곱 × 셀 개수별 배수. 만능(?)은 WILD_VALUE 로 환산. */
+const SCORE_PAIR_MULT = 5;
+const SCORE_TRIPLE_MULT = 12;
+/** 만능(?) 블럭의 점수 환산 값 — 매치 시 곱셈에 5 로 참여 (1~9 의 기대값). */
+const WILD_VALUE = 5;
 const DEFAULT_INTRO_MS = 2500;
 /** 연쇄(chain) 인정 윈도우 — 직전 매치로부터 이 시간 안에 다음 매치를 성공시키면 연쇄. */
 const CHAIN_WINDOW_MS = 1000;
@@ -771,13 +774,16 @@ export class GameScene implements Scene {
     const result = this.selector.commit();
     if (result.valid) {
       // 매치 적용 전 보드 좌표/lives/bonus 캡처 → 실제로 lives→0 으로 파괴된 셀과 보너스 적중 판단.
+      // 점수 산출도 applyMatch 가 셀 값을 0으로 비우기 전에 미리 계산해 두어야 한다.
       const boardLayout = this.boardRenderer.getLayout();
       const positions = result.positions;
       const preLives: number[] = [];
       let hitBonus = false;
+      let product = 1;
       for (const [c, r] of positions) {
         preLives.push(this.board.getLives(c, r));
         if (this.board.isBonus(c, r)) hitBonus = true;
+        product *= this.board.isWildcard(c, r) ? WILD_VALUE : this.board.getCell(c, r);
       }
       this.board.applyMatch(positions);
       const destroyed: Array<readonly [number, number]> = [];
@@ -791,7 +797,9 @@ export class GameScene implements Scene {
       const within = this.elapsedMs - this.lastMatchAtMs <= CHAIN_WINDOW_MS;
       this.chainCount = within ? this.chainCount + 1 : 1;
       this.lastMatchAtMs = this.elapsedMs;
-      const baseScore = positions.length === 2 ? SCORE_PAIR : SCORE_TRIPLE;
+      // 베이스 점수 — 셀 값들의 곱에 매치 크기별 배수. 만능(?)은 WILD_VALUE 로 환산.
+      const baseScore =
+        product * (positions.length === 2 ? SCORE_PAIR_MULT : SCORE_TRIPLE_MULT);
       const chainBonus =
         this.chainCount >= 2
           ? Math.min(CHAIN_BONUS_CAP, CHAIN_BONUS_STEP * (this.chainCount - 1))
@@ -799,10 +807,11 @@ export class GameScene implements Scene {
       // 보너스(×2) 적중: 베이스+연쇄 합계에 배수 적용.
       const subtotal = baseScore + chainBonus;
       const total = hitBonus ? subtotal * BONUS_MULTIPLIER : subtotal;
+      // 베이스가 동적이므로 항상 scoreOverride 로 실제 점수 표기.
       this.effects.spawnRemoval(destroyed, boardLayout, positions.length === 3 ? "triple" : "pair", {
         chainBonus: chainBonus > 0 ? chainBonus : undefined,
         chainDepth: chainBonus > 0 ? this.chainCount : undefined,
-        scoreOverride: hitBonus || chainBonus > 0 ? total : undefined,
+        scoreOverride: total,
         multiplier: hitBonus ? BONUS_MULTIPLIER : undefined,
       });
       this.board.applyGravity();

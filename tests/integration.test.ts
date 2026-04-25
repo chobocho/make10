@@ -267,7 +267,7 @@ describe("Integration: Title → Game → Result", () => {
       timeLimit: 60,
       hintCount: 0,
       targetScore: 0,
-      starThresholds: [50, 150, 300], // ★1 컷=50 → 한 번 매치(100점)면 ★★
+      starThresholds: [50, 150, 300], // ★1 컷=50 → 한 번 매치(4×6×5=120점)면 ★1
       initialBoard: [[4, 6]],
     };
     const { ctx, fsm, saveManager } = buildContext(() => winMap);
@@ -291,7 +291,7 @@ describe("Integration: Title → Game → Result", () => {
     await Promise.resolve();
     await Promise.resolve();
     assertEqual(fsm.getCurrentId(), "result");
-    // 점수 100 ≥ ★1=50 → cleared=true, stars=1
+    // 점수 120 ≥ ★1=50, <★2=150 → cleared=true, stars=1
     const res = (fsm.getCurrent() as unknown as { result: GameResult | null }).result;
     assertTrue(res !== null);
     assertTrue(res!.cleared);
@@ -304,7 +304,7 @@ describe("Integration: Title → Game → Result", () => {
     const saved = await saveManager.load(7);
     assertTrue(saved !== null, "saveBest 로 점수가 저장되어야 함");
     assertEqual(saved!.stars, 1);
-    assertEqual(saved!.score, 100);
+    assertEqual(saved!.score, 120);
 
     // 타이틀로 → bestStars 에 7번 맵의 ★1 반영
     const size = ctx.renderer.getSize();
@@ -453,6 +453,7 @@ describe("Integration: Title → Game → Result", () => {
       timeLimit: 60,
       hintCount: 0,
       targetScore: 0,
+      // ★1 컷을 한 쌍 매치(3×7×5=105)보다 높게 → stuck 시 cleared=false 보장.
       starThresholds: [200, 500, 1000],
       initialBoard: [
         [3, 7],

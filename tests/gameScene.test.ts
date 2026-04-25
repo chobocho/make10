@@ -171,14 +171,14 @@ describe("GameScene", () => {
     scene.onPointerDown!(a.x, a.y);
     scene.onPointerMove!(b.x, b.y);
     scene.onPointerUp!(b.x, b.y);
-    // 2x1 + 모두 1 리필 → stuck, 점수 100 → ★★ (≥150 아님, ≥50 맞음 → ★1)
+    // 2x1 + 모두 1 리필 → stuck, 점수 4×6×5=120 → ≥50, <150 → ★1.
     const res = transitions[transitions.length - 1].args as GameResult;
     assertEqual(res.stars, 1);
     assertTrue(res.cleared);
     assertEqual(res.starThresholds[0], 50);
   });
 
-  test("합 10 드래그 → remove 사운드 + 점수 +100 + 보드 리필로 가득 유지", async () => {
+  test("합 10 드래그 → remove 사운드 + 점수 가산 + 보드 리필로 가득 유지", async () => {
     const r = makeFakeRenderer();
     const { context, audioCalls } = makeCtx(r);
     // RNG=0 → 리필 값은 모두 1 (2x1 맵에서는 1+1=2라 유효 조합 없음 → stuck)
@@ -456,7 +456,7 @@ describe("GameScene", () => {
         timeLimit: 60,
         hintCount: 0,
         targetScore: 0,
-        // ★1 임계값을 한 번의 쌍 제거 점수(100)보다 높게 → stuck 시 cleared=false 예측 가능.
+        // ★1 임계값을 한 번의 쌍 제거 점수(3×7×5=105)보다 높게 → stuck 시 cleared=false 예측 가능.
         starThresholds: [200, 500, 1000],
         initialBoard: [
           [3, 7],
@@ -1109,8 +1109,8 @@ describe("GameScene + 매치 이펙트", () => {
     assertTrue(effects.hasActive());
   });
 
-  test("점수: 2셀 +100 / 3셀 +300 (3셀이 동수의 2셀 매치보다 우월)", async () => {
-    // 2셀 매치 한 번
+  test("점수: 2셀=곱×5 / 3셀=곱×12 (특정 조합에서 3셀이 동수의 2셀 매치보다 우월)", async () => {
+    // 2셀 매치 — [4, 6] → 4×6×5 = 120
     const r1 = makeFakeRenderer();
     const { context: ctx1 } = makeCtx(r1);
     const sceneP = new GameScene(ctx1, () => 0, 0);
@@ -1122,9 +1122,9 @@ describe("GameScene + 매치 이펙트", () => {
     sceneP.onPointerDown!(lP.originX + lP.cellSize / 2, lP.originY + lP.cellSize / 2);
     sceneP.onPointerMove!(lP.originX + lP.cellSize * 1.5, lP.originY + lP.cellSize / 2);
     sceneP.onPointerUp!(lP.originX + lP.cellSize * 1.5, lP.originY + lP.cellSize / 2);
-    assertEqual(sceneP._getScore(), 100);
+    assertEqual(sceneP._getScore(), 120);
 
-    // 3셀 매치 한 번
+    // 3셀 매치 — [3, 3, 4] → 3×3×4×12 = 432 (2셀 두 번=240 보다 큼)
     const tripleMap: MapData = {
       id: 11,
       name: "tri",
@@ -1134,7 +1134,7 @@ describe("GameScene + 매치 이펙트", () => {
       hintCount: 0,
       targetScore: 0,
       starThresholds: [50, 150, 300],
-      initialBoard: [[1, 2, 7]],
+      initialBoard: [[3, 3, 4]],
     };
     const r2 = makeFakeRenderer();
     const { context: ctx2 } = makeCtx(r2);
@@ -1148,8 +1148,8 @@ describe("GameScene + 매치 이펙트", () => {
     sceneT.onPointerMove!(lT.originX + lT.cellSize * 1.5, lT.originY + lT.cellSize / 2);
     sceneT.onPointerMove!(lT.originX + lT.cellSize * 2.5, lT.originY + lT.cellSize / 2);
     sceneT.onPointerUp!(lT.originX + lT.cellSize * 2.5, lT.originY + lT.cellSize / 2);
-    assertEqual(sceneT._getScore(), 300);
-    // 명시적 우월성: 3셀 한 번 > 2셀 두 번
+    assertEqual(sceneT._getScore(), 432);
+    // 명시적 우월성: 3셀 한 번 > 2셀 두 번 (3·3·4·12=432 > 2·120=240)
     assertTrue(sceneT._getScore() > 2 * sceneP._getScore());
   });
 
@@ -1353,8 +1353,8 @@ describe("GameScene + 보너스(×2) 블럭", () => {
     scene.onPointerDown!(a.x, a.y);
     scene.onPointerMove!(b.x, b.y);
     scene.onPointerUp!(b.x, b.y);
-    // 베이스 100 × 2 = 200 (연쇄 없음, 첫 매치).
-    assertEqual(scene._getScore(), 200);
+    // 베이스 4×6×5=120, 보너스 ×2 → 240 (연쇄 없음, 첫 매치).
+    assertEqual(scene._getScore(), 240);
     // 매치 후 보너스 셀이 파괴됨 → bonusCell null.
     assertEqual(scene._getBonusCell(), null);
   });
@@ -1381,8 +1381,8 @@ describe("GameScene + 보너스(×2) 블럭", () => {
     scene.onPointerDown!(a.x, a.y);
     scene.onPointerMove!(b.x, b.y);
     scene.onPointerUp!(b.x, b.y);
-    // (0,0)+(1,0) = 4+6=10 매치. 보너스는 (2,0)이라 미포함 → 일반 100점.
-    assertEqual(scene._getScore(), 100);
+    // (0,0)+(1,0) = 4+6=10 매치. 보너스는 (2,0)이라 미포함 → 4×6×5 = 120.
+    assertEqual(scene._getScore(), 120);
   });
 
   test("자동 스폰 타이머: 12초 경과 시 보너스 1개 활성 (rand=0.5 → 11s 인터벌)", async () => {
@@ -1606,20 +1606,21 @@ describe("GameScene + 연쇄 보너스", () => {
     await scene.enter({ map: chainMap() });
     scene.render();
     dragTopPair(scene);
-    assertEqual(scene._getScore(), 100);
+    // chainMap 의 (0,0)+(1,0)=4+6 → 4×6×5 = 120
+    assertEqual(scene._getScore(), 120);
   });
 
-  test("1초 이내 두 번째 매치: +50 보너스 (총 100 + 150 = 250)", async () => {
+  test("1초 이내 두 번째 매치: +50 보너스 (총 120 + 170 = 290)", async () => {
     const { scene } = makeChainScene();
     await scene.enter({ map: chainMap() });
     scene.render();
-    dragTopPair(scene); // 100 (chain=1)
+    dragTopPair(scene); // 120 (chain=1)
     scene.render();
-    dragTopPair(scene); // +150 (chain=2, base 100 + bonus 50)
-    assertEqual(scene._getScore(), 250);
+    dragTopPair(scene); // +170 (chain=2, base 120 + bonus 50)
+    assertEqual(scene._getScore(), 290);
   });
 
-  test("1초 초과 갭: 연쇄 끊김 (총 200, 보너스 없음)", async () => {
+  test("1초 초과 갭: 연쇄 끊김 (총 240, 보너스 없음)", async () => {
     const { scene } = makeChainScene();
     await scene.enter({ map: chainMap() });
     scene.render();
@@ -1627,10 +1628,10 @@ describe("GameScene + 연쇄 보너스", () => {
     scene.update(1100); // 1초 + 마진 → 윈도우 밖
     scene.render();
     dragTopPair(scene);
-    assertEqual(scene._getScore(), 200);
+    assertEqual(scene._getScore(), 240);
   });
 
-  test("3연쇄: +50, +100 누적 (100+150+200=450)", async () => {
+  test("3연쇄: +50, +100 누적 (120+170+220=510)", async () => {
     const { scene } = makeChainScene();
     await scene.enter({ map: chainMap() });
     scene.render();
@@ -1639,14 +1640,15 @@ describe("GameScene + 연쇄 보너스", () => {
     dragTopPair(scene);
     scene.render();
     dragTopPair(scene);
-    assertEqual(scene._getScore(), 450);
+    assertEqual(scene._getScore(), 510);
   });
 
-  test("연쇄 보너스 캡: 6연쇄부터 보너스 +250 고정 (delta 350)", async () => {
+  test("연쇄 보너스 캡: 6연쇄부터 보너스 +250 고정 (delta 370)", async () => {
     const { scene } = makeChainScene();
     await scene.enter({ map: chainMap() });
     let prev = 0;
-    const expectDeltas = [100, 150, 200, 250, 300, 350, 350];
+    // 베이스 120 + 연쇄보너스(50, 100, 150, 200, 250, 250, 250) = 120, 170, 220, 270, 320, 370, 370
+    const expectDeltas = [120, 170, 220, 270, 320, 370, 370];
     for (let i = 0; i < expectDeltas.length; i++) {
       scene.render();
       dragTopPair(scene);
@@ -1675,12 +1677,12 @@ describe("GameScene + 연쇄 보너스", () => {
     dragTopPair(scene);
     scene.render();
     dragTopPair(scene); // 연쇄 활성
-    assertEqual(scene._getScore(), 250);
+    assertEqual(scene._getScore(), 290);
     (scene as unknown as { restartMap(): void }).restartMap();
     (scene as unknown as { _dismissIntro(): void })._dismissIntro();
     scene.render();
     dragTopPair(scene);
-    assertEqual(scene._getScore(), 100); // 보너스 없음
+    assertEqual(scene._getScore(), 120); // 보너스 없음
   });
 });
 
