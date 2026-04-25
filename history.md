@@ -276,6 +276,28 @@
   - 3→1→6 다른 ㄱ자 경로도 정답 인식
   - phase 5 finale 텍스트 탭 → 종료 + 완료 마킹
 
+## 2026-04-25 — 이슈 #31 연쇄 보너스 (1초 이내 매치)
+
+게임성 평가 후속 — "연쇄(chain) 부재로 보상감 부족" 피드백 반영.
+
+- **로직** (`src/scenes/GameScene.ts`):
+  - `CHAIN_WINDOW_MS=1000`, `CHAIN_BONUS_STEP=50`, `CHAIN_BONUS_CAP=250` 상수.
+  - `elapsedMs` (단조 증가, 일시정지/인트로/튜토리얼 중에는 멈춤) 도입 — 외부 시계 의존성 없이 테스트 가능.
+  - `chainCount`, `lastMatchAtMs` 추적. 매 매치마다 `elapsedMs - lastMatchAtMs ≤ 1000` 이면 chain += 1, 아니면 1로 리셋.
+  - 보너스: `chain >= 2` 일 때 `min(CAP, STEP * (chain - 1))` → 50, 100, 150, 200, 250(cap).
+  - score 적용: `base(100/400) + chainBonus`.
+  - 세션 복원 / restartMap 시에도 항상 0으로 리셋.
+- **시각** (`src/renderer/EffectLayer.ts`):
+  - `RemovalOptions { chainBonus, chainDepth }` 추가, `spawnRemoval` 4번째 인자로 전달.
+  - 베이스 팝업 위쪽에 "⚡ +50 x2" 형태의 하늘색 배지 ScorePopup 1개 추가.
+- **테스트** (10건 추가):
+  - `gameScene.test`: chainMap (6×6 4/6 교차, 결정적 RNG로 무한 자체순환) 헬퍼 도입.
+    1) 첫 매치 보너스 없음, 2) 1초 이내 +50, 3) 1초 초과 끊김, 4) 3연쇄 누적,
+    5) 7번 반복으로 cap 검증(delta 100→150→200→250→300→350→350), 6) 배지 팝업 추가, 7) restartMap 리셋.
+  - `effectLayer.test`: chainBonus 옵션 시 +1 팝업, chainBonus=0이면 추가 없음 3건.
+  - 기존 `fakeRenderer` ctx 에 `arc`/`fill`/`globalAlpha`/`strokeText` 추가 (이펙트 렌더 호환).
+- 검증: 330/330 pass, 번들 112.8 → 114.0KB.
+
 ## 2026-04-25 — 이슈 #30 3셀 매치 점수 250 → 400 인상
 
 게임성 평가 후속 — 3셀 매치 보상이 약했던 점(2셀×2=200 < 3셀=250, 셀당 83점) 보강.

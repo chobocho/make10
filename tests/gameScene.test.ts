@@ -27,10 +27,12 @@ function makeFakeRenderer(width = 480, height = 800): CanvasRenderer {
     font: "",
     textAlign: "left",
     textBaseline: "top",
+    globalAlpha: 1,
     fillRect() {},
     strokeRect() {},
     clearRect() {},
     fillText() {},
+    strokeText() {},
     setTransform() {},
     save() {},
     restore() {},
@@ -40,7 +42,9 @@ function makeFakeRenderer(width = 480, height = 800): CanvasRenderer {
     beginPath() {},
     moveTo() {},
     lineTo() {},
+    arc() {},
     stroke() {},
+    fill() {},
     createLinearGradient: () => gradient,
   } as unknown as CanvasRenderingContext2D;
   const canvas = {
@@ -1212,6 +1216,140 @@ describe("GameScene + 매치 이펙트", () => {
     // 외부에서 검증할 안전한 방법은 effects._size() — pair는 항상 ParticleBurst 1 + ScorePopup 1 = 2.
     const effects = (scene as unknown as { effects: { _size(): number } }).effects;
     assertEqual(effects._size(), 2);
+  });
+});
+
+describe("GameScene + 연쇄 보너스", () => {
+  /**
+   * 6x6 4/6 교차 보드 — 매치 후 중력+리필이 끝나면 보드가 매번 동일 상태로 복원되어
+   * 무한히 (0,0)+(1,0) 매치를 반복할 수 있다 (stuck 발생 없음).
+   * 결정적 RNG seqRand(0.35, 0.6) 와 짝지어 사용:
+   *   refill 은 row-major(외부 r, 내부 c) 순회 → 매 매치마다 (0,0) 다음 (0,1) 두 셀만 refill.
+   *   1+floor(0.35*9)=4, 1+floor(0.6*9)=6 → 항상 4,6 으로 복원.
+   */
+  function chainMap(): MapData {
+    const row1: number[] = [4, 6, 4, 6, 4, 6];
+    const row2: number[] = [6, 4, 6, 4, 6, 4];
+    return {
+      id: 91,
+      name: "chain",
+      cols: 6,
+      rows: 6,
+      timeLimit: 60,
+      hintCount: 0,
+      targetScore: 0,
+      starThresholds: [50, 150, 300],
+      initialBoard: [row1, row2, row1, row2, row1, row2],
+    };
+  }
+
+  function makeChainScene(): { scene: GameScene; ctx: SceneContext } {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    const seq = [0.35, 0.6];
+    let i = 0;
+    const scene = new GameScene(
+      context,
+      () => {
+        const v = seq[i % seq.length];
+        i++;
+        return v;
+      },
+      0,
+    );
+    return { scene, ctx: context };
+  }
+
+  function dragTopPair(scene: GameScene): void {
+    const layout = (scene as unknown as {
+      boardRenderer: { getLayout(): { originX: number; originY: number; cellSize: number } };
+    }).boardRenderer.getLayout();
+    const cy = layout.originY + layout.cellSize / 2;
+    scene.onPointerDown!(layout.originX + layout.cellSize / 2, cy);
+    scene.onPointerMove!(layout.originX + layout.cellSize * 1.5, cy);
+    scene.onPointerUp!(layout.originX + layout.cellSize * 1.5, cy);
+  }
+
+  test("첫 매치는 연쇄 아님 — 기본 점수만", async () => {
+    const { scene } = makeChainScene();
+    await scene.enter({ map: chainMap() });
+    scene.render();
+    dragTopPair(scene);
+    assertEqual(scene._getScore(), 100);
+  });
+
+  test("1초 이내 두 번째 매치: +50 보너스 (총 100 + 150 = 250)", async () => {
+    const { scene } = makeChainScene();
+    await scene.enter({ map: chainMap() });
+    scene.render();
+    dragTopPair(scene); // 100 (chain=1)
+    scene.render();
+    dragTopPair(scene); // +150 (chain=2, base 100 + bonus 50)
+    assertEqual(scene._getScore(), 250);
+  });
+
+  test("1초 초과 갭: 연쇄 끊김 (총 200, 보너스 없음)", async () => {
+    const { scene } = makeChainScene();
+    await scene.enter({ map: chainMap() });
+    scene.render();
+    dragTopPair(scene);
+    scene.update(1100); // 1초 + 마진 → 윈도우 밖
+    scene.render();
+    dragTopPair(scene);
+    assertEqual(scene._getScore(), 200);
+  });
+
+  test("3연쇄: +50, +100 누적 (100+150+200=450)", async () => {
+    const { scene } = makeChainScene();
+    await scene.enter({ map: chainMap() });
+    scene.render();
+    dragTopPair(scene);
+    scene.render();
+    dragTopPair(scene);
+    scene.render();
+    dragTopPair(scene);
+    assertEqual(scene._getScore(), 450);
+  });
+
+  test("연쇄 보너스 캡: 6연쇄부터 보너스 +250 고정 (delta 350)", async () => {
+    const { scene } = makeChainScene();
+    await scene.enter({ map: chainMap() });
+    let prev = 0;
+    const expectDeltas = [100, 150, 200, 250, 300, 350, 350];
+    for (let i = 0; i < expectDeltas.length; i++) {
+      scene.render();
+      dragTopPair(scene);
+      const cur = scene._getScore();
+      assertEqual(cur - prev, expectDeltas[i], `i=${i + 1}`);
+      prev = cur;
+    }
+  });
+
+  test("연쇄 발생 시 chain 배지 팝업이 추가 (이펙트 ≥ 5)", async () => {
+    const { scene } = makeChainScene();
+    await scene.enter({ map: chainMap() });
+    scene.render();
+    dragTopPair(scene);
+    scene.render();
+    dragTopPair(scene);
+    const effects = (scene as unknown as { effects: { _size(): number } }).effects;
+    // 매치 직후 cluster: 베이스 2 (Burst+Popup) × 2 + 연쇄 배지 1 = 5 이상 (이전 매치 effects 잔존).
+    assertTrue(effects._size() >= 5);
+  });
+
+  test("restartMap: 연쇄 상태도 함께 리셋", async () => {
+    const { scene } = makeChainScene();
+    await scene.enter({ map: chainMap() });
+    scene.render();
+    dragTopPair(scene);
+    scene.render();
+    dragTopPair(scene); // 연쇄 활성
+    assertEqual(scene._getScore(), 250);
+    (scene as unknown as { restartMap(): void }).restartMap();
+    (scene as unknown as { _dismissIntro(): void })._dismissIntro();
+    scene.render();
+    dragTopPair(scene);
+    assertEqual(scene._getScore(), 100); // 보너스 없음
   });
 });
 

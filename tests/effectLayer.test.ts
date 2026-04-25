@@ -159,6 +159,49 @@ describe("EffectLayer", () => {
     assertTrue(called);
   });
 
+  test("spawnRemoval(pair, chainBonus): 베이스 2개 + 연쇄 배지 1개 = 3", () => {
+    const e = new EffectLayer(seqRand([0.5]));
+    e.spawnRemoval(
+      [
+        [0, 0],
+        [1, 0],
+      ],
+      layout,
+      "pair",
+      { chainBonus: 50, chainDepth: 2 },
+    );
+    assertEqual(e._size(), 3);
+  });
+
+  test("spawnRemoval(triple, chainBonus): 베이스 4개 + 연쇄 배지 1개 = 5", () => {
+    const e = new EffectLayer(seqRand([0.5]));
+    e.spawnRemoval(
+      [
+        [0, 0],
+        [1, 0],
+        [2, 0],
+      ],
+      layout,
+      "triple",
+      { chainBonus: 100, chainDepth: 3 },
+    );
+    assertEqual(e._size(), 5);
+  });
+
+  test("chainBonus=0 또는 미지정: 추가 팝업 없음", () => {
+    const e = new EffectLayer(seqRand([0.5]));
+    e.spawnRemoval(
+      [
+        [0, 0],
+        [1, 0],
+      ],
+      layout,
+      "pair",
+      { chainBonus: 0, chainDepth: 1 },
+    );
+    assertEqual(e._size(), 2);
+  });
+
   test("triple > pair: 파티클 폭발의 활성 시간이 더 김 (이펙트가 늦게 만료)", () => {
     const ePair = new EffectLayer(seqRand([0.5]));
     ePair.spawnRemoval(

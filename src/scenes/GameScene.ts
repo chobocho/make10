@@ -57,6 +57,11 @@ export interface GameResult {
 const SCORE_PAIR = 100;
 const SCORE_TRIPLE = 400;
 const DEFAULT_INTRO_MS = 2500;
+/** 연쇄(chain) 인정 윈도우 — 직전 매치로부터 이 시간 안에 다음 매치를 성공시키면 연쇄. */
+const CHAIN_WINDOW_MS = 1000;
+/** 연쇄 단계당 추가 보너스. 첫 연쇄(depth=2)는 +50, 다음은 +100, ..., 캡 적용. */
+const CHAIN_BONUS_STEP = 50;
+const CHAIN_BONUS_CAP = 250;
 
 export class GameScene implements Scene {
   private readonly context: SceneContext;
@@ -83,6 +88,12 @@ export class GameScene implements Scene {
   private readonly tutorial: TutorialOverlay;
   /** 매치/제거 시각 이펙트 레이어 (파티클·점수 팝업·링). */
   private readonly effects: EffectLayer;
+  /** 일시정지 중에는 멈추는 단조 증가 시계 — 연쇄 윈도우 판정에 사용. */
+  private elapsedMs: number;
+  /** 마지막 매치 성공 시점(elapsedMs 단위). -Infinity 면 매치 없음. */
+  private lastMatchAtMs: number;
+  /** 현재 연쇄 길이. 0=매치 없음, 1=단발, 2+=연쇄. */
+  private chainCount: number;
 
   constructor(
     context: SceneContext,
@@ -110,6 +121,9 @@ export class GameScene implements Scene {
     this.pauseMenuLayout = null;
     this.tutorial = new TutorialOverlay(context.renderer);
     this.effects = new EffectLayer(this.randomFn);
+    this.elapsedMs = 0;
+    this.lastMatchAtMs = Number.NEGATIVE_INFINITY;
+    this.chainCount = 0;
   }
 
   async enter(args?: unknown): Promise<void> {
@@ -153,6 +167,10 @@ export class GameScene implements Scene {
     const hintCount = resumeFrom?.hintsLeft ?? this.map.hintCount;
     this.hint = new Hint(this.board, hintCount);
     this.score = resumeFrom?.score ?? 0;
+    // 연쇄 상태는 세션 복원에도 항상 리셋 — 시간 격차로 인해 의미 없음.
+    this.elapsedMs = 0;
+    this.lastMatchAtMs = Number.NEGATIVE_INFINITY;
+    this.chainCount = 0;
     this.ended = false;
     this.pressedHintBtn = false;
     this.pressedPauseBtn = false;
@@ -312,7 +330,9 @@ export class GameScene implements Scene {
     if (this.paused) return;
     this.timer?.tick(deltaMs);
     this.hint?.tick(deltaMs);
-    // 이펙트는 게임 일시정지/인트로 외에서만 진행 — 매치 직후에도 자연스럽게 흐름.
+    // 일시정지/인트로/튜토리얼 외 활성 시간만 누적 — 연쇄 윈도우가 일시정지로 인해 부풀지 않게.
+    this.elapsedMs += deltaMs;
+    // 이펙트는 활성 상태에서만 진행 — 매치 직후에도 자연스럽게 흐름.
     this.effects.update(deltaMs);
   }
 
@@ -567,15 +587,25 @@ export class GameScene implements Scene {
           destroyed.push([c, r] as const);
         }
       }
+      // 연쇄 판정: 직전 매치로부터 CHAIN_WINDOW_MS 이내면 chainCount 증가, 아니면 1로 리셋.
+      const within = this.elapsedMs - this.lastMatchAtMs <= CHAIN_WINDOW_MS;
+      this.chainCount = within ? this.chainCount + 1 : 1;
+      this.lastMatchAtMs = this.elapsedMs;
+      const baseScore = positions.length === 2 ? SCORE_PAIR : SCORE_TRIPLE;
+      const chainBonus =
+        this.chainCount >= 2
+          ? Math.min(CHAIN_BONUS_CAP, CHAIN_BONUS_STEP * (this.chainCount - 1))
+          : 0;
       this.effects.spawnRemoval(
         destroyed,
         boardLayout,
         positions.length === 3 ? "triple" : "pair",
+        chainBonus > 0 ? { chainBonus, chainDepth: this.chainCount } : undefined,
       );
       this.board.applyGravity();
       this.board.refill(this.randomFn);
       this.hint?.clear();
-      this.score += positions.length === 2 ? SCORE_PAIR : SCORE_TRIPLE;
+      this.score += baseScore + chainBonus;
       this.context.audio.play("remove");
       if (findValidCombination(this.board) === null) {
         this.endGame("stuck");

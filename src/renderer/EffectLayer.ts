@@ -195,6 +195,13 @@ export interface CellLayout {
 
 export type ComboKind = "pair" | "triple";
 
+export interface RemovalOptions {
+  /** 연쇄 보너스 점수 — 양수일 때만 추가 팝업으로 표시. */
+  readonly chainBonus?: number;
+  /** 연쇄 단계(2 이상에서 의미 있음). 배지 라벨에 사용. */
+  readonly chainDepth?: number;
+}
+
 export class EffectLayer {
   private effects: Effect[] = [];
   private readonly randomFn: () => number;
@@ -208,11 +215,13 @@ export class EffectLayer {
    * @param cells 제거된 셀 좌표 (col, row). 비어있으면 점수 팝업도 생성하지 않는다.
    * @param layout 보드 셀의 화면 좌표 변환 정보.
    * @param kind  매치 종류 — "pair" (2셀, +100) 또는 "triple" (3셀, +400).
+   * @param options 연쇄 보너스 등 부가 표시 (선택).
    */
   spawnRemoval(
     cells: ReadonlyArray<readonly [number, number]>,
     layout: CellLayout,
     kind: ComboKind,
+    options?: RemovalOptions,
   ): void {
     if (cells.length === 0) return;
     const isTriple = kind === "triple";
@@ -269,6 +278,17 @@ export class EffectLayer {
     } else {
       this.effects.push(
         new ScorePopup(cx, cy, "+100", Math.max(20, size * 0.5), "#fff7c2", 720),
+      );
+    }
+
+    // 연쇄 보너스 — 베이스 팝업 위쪽에 추가 표시. depth >= 2 부터 의미 있음.
+    if (options?.chainBonus && options.chainBonus > 0) {
+      const depth = options.chainDepth ?? 2;
+      const text = `⚡ +${options.chainBonus}  x${depth}`;
+      const fontPx = Math.max(18, size * 0.42);
+      // 베이스 팝업 위쪽으로 살짝 띄움 (단순 y 오프셋 — riseSpeed 가 더 빨라 위로 분리되어 보임).
+      this.effects.push(
+        new ScorePopup(cx, cy - size * 0.8, text, fontPx, "#7dd4fc", 900),
       );
     }
   }
