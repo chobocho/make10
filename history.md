@@ -276,6 +276,28 @@
   - 3→1→6 다른 ㄱ자 경로도 정답 인식
   - phase 5 finale 텍스트 탭 → 종료 + 완료 마킹
 
+## 2026-04-25 — 이슈 #29 매치 이펙트 강화
+
+매치 시 즉발적이던 셀 제거에 시각 피드백 추가. 3셀 매치는 더 강한 이펙트.
+
+- **신규**: `src/renderer/EffectLayer.ts` — 게임 로직과 분리된 이펙트 레이어.
+  - `ParticleBurst` — 셀 중심에서 방사형으로 튀는 파티클(중력+마찰 적용).
+  - `ScorePopup` — 위로 떠오르며 페이드되는 "+100" / "+250" 텍스트(외곽선 포함).
+  - `ExpandingRing` — easeOutCubic로 확장하며 페이드되는 링 (3셀 전용).
+  - `spawnRemoval(cells, layout, kind)` — pair / triple 두 모드.
+- **차등 강도**:
+  - **pair (+100)**: 파티클 9개/셀, 수명 ~420ms, 흰/노/하늘 팔레트, 팝업 한 개.
+  - **triple (+250)**: 파티클 16개/셀, 수명 ~620ms, 골드/오렌지 팔레트, 팝업 + 링 2개(외곽 + 내부).
+- **GameScene 통합** (`src/scenes/GameScene.ts`):
+  - 매치 적용 **전** `boardRenderer.getLayout()` 캡처 + 셀별 lives 캡처 → applyMatch 후 lives→0 으로 실제 파괴된 셀만 destroyed 목록에 포함.
+  - 멀티라이프로 살아남은 셀은 파티클 안 나옴(시각적 정합성).
+  - update 루프에서 effects.update(), render 시 보드 위·HUD 아래에 합성.
+  - exit/restartMap 시 effects.clear() 로 정리.
+- **테스트** (13건 추가):
+  - `tests/effectLayer.test.ts` 10건 — pair/triple 이펙트 개수 차이, 빈 셀 무시, 만료 정리, 0ms 노옵, clear, 렌더 스모크, triple 수명 > pair.
+  - `tests/gameScene.test.ts` 3건 — 2셀/3셀 매치 시 이펙트 활성, 멀티라이프 생존 셀은 파티클 미스폰 (개수 동일 검증).
+- 검증: 319/319 pass, 번들 105.3 → 112.8KB.
+
 ## 2026-04-25 — 이슈 #28 101-199 장애물 추가 (≤2%)
 
 장애물 도입 시작점을 200 → 101로 낮춤. 단 101-199 구간은 가벼운 도입(≤2%).

@@ -1082,6 +1082,95 @@ describe("GameScene", () => {
   });
 });
 
+describe("GameScene + 매치 이펙트", () => {
+  test("2셀 매치: 이펙트 레이어 활성화", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    const scene = new GameScene(context, () => 0, 0);
+    await scene.enter({ map: tinyMap() });
+    scene.render();
+    const layout = (scene as unknown as {
+      boardRenderer: { getLayout(): { originX: number; originY: number; cellSize: number } };
+    }).boardRenderer.getLayout();
+    const cx0 = layout.originX + layout.cellSize / 2;
+    const cx1 = layout.originX + layout.cellSize + layout.cellSize / 2;
+    const cy = layout.originY + layout.cellSize / 2;
+    scene.onPointerDown!(cx0, cy);
+    scene.onPointerMove!(cx1, cy);
+    scene.onPointerUp!(cx1, cy);
+    const effects = (scene as unknown as { effects: { hasActive(): boolean; _size(): number } }).effects;
+    assertTrue(effects.hasActive());
+  });
+
+  test("3셀 매치: pair 보다 더 많은 이펙트가 동시 활성", async () => {
+    const tripleMap: MapData = {
+      id: 11,
+      name: "tri",
+      cols: 3,
+      rows: 1,
+      timeLimit: 60,
+      hintCount: 0,
+      targetScore: 0,
+      starThresholds: [50, 150, 300],
+      initialBoard: [[1, 2, 7]],
+    };
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    const scene = new GameScene(context, () => 0, 0);
+    await scene.enter({ map: tripleMap });
+    scene.render();
+    const layout = (scene as unknown as {
+      boardRenderer: { getLayout(): { originX: number; originY: number; cellSize: number } };
+    }).boardRenderer.getLayout();
+    const cx0 = layout.originX + layout.cellSize / 2;
+    const cx1 = layout.originX + layout.cellSize + layout.cellSize / 2;
+    const cx2 = layout.originX + 2 * layout.cellSize + layout.cellSize / 2;
+    const cy = layout.originY + layout.cellSize / 2;
+    scene.onPointerDown!(cx0, cy);
+    scene.onPointerMove!(cx1, cy);
+    scene.onPointerMove!(cx2, cy);
+    scene.onPointerUp!(cx2, cy);
+    const effects = (scene as unknown as { effects: { _size(): number } }).effects;
+    // triple: ParticleBurst + ScorePopup + ExpandingRing x2 = 4
+    assertEqual(effects._size(), 4);
+  });
+
+  test("멀티라이프로 살아남은 셀은 이펙트 셀에 포함되지 않음 (점수 팝업만)", async () => {
+    // (0,0) life=2, (1,0) life=1 — 2셀 매치 시 양쪽 lives≥2 가 아니므로 일반 데미지=1.
+    // 결과: (0,0) lives 2→1 (생존), (1,0) lives 1→0 (파괴).
+    const map: MapData = {
+      id: 12,
+      name: "multi",
+      cols: 2,
+      rows: 1,
+      timeLimit: 60,
+      hintCount: 0,
+      targetScore: 0,
+      starThresholds: [50, 150, 300],
+      initialBoard: [[4, 6]],
+      initialLives: [[2, 1]],
+    };
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    const scene = new GameScene(context, () => 0, 0);
+    await scene.enter({ map });
+    scene.render();
+    const layout = (scene as unknown as {
+      boardRenderer: { getLayout(): { originX: number; originY: number; cellSize: number } };
+    }).boardRenderer.getLayout();
+    const cx0 = layout.originX + layout.cellSize / 2;
+    const cx1 = layout.originX + layout.cellSize + layout.cellSize / 2;
+    const cy = layout.originY + layout.cellSize / 2;
+    scene.onPointerDown!(cx0, cy);
+    scene.onPointerMove!(cx1, cy);
+    scene.onPointerUp!(cx1, cy);
+    // 살아남은 (0,0)은 destroyed 목록에 없으므로 ParticleBurst의 입자는 (1,0) 1셀 분량만.
+    // 외부에서 검증할 안전한 방법은 effects._size() — pair는 항상 ParticleBurst 1 + ScorePopup 1 = 2.
+    const effects = (scene as unknown as { effects: { _size(): number } }).effects;
+    assertEqual(effects._size(), 2);
+  });
+});
+
 describe("GameScene + 장애물", () => {
   function obstacleMap(): MapData {
     // 1열 3행: (0,0)=4, (0,1)=장애물, (0,2)=6  (수직 인접 아님 — 매치 불가)

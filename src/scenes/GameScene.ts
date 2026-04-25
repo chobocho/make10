@@ -15,6 +15,7 @@ import {
   computeBoardLayout,
   hitTestCell,
 } from "../renderer/BoardRenderer";
+import { EffectLayer } from "../renderer/EffectLayer";
 import {
   UIRenderer,
   computeUILayout,
@@ -80,6 +81,8 @@ export class GameScene implements Scene {
   private pauseMenuLayout: ReturnType<typeof computePauseMenuLayout> | null;
   /** 1판 첫 진입 시 노출되는 인터랙티브 튜토리얼. 비활성 상태 = isActive() false. */
   private readonly tutorial: TutorialOverlay;
+  /** 매치/제거 시각 이펙트 레이어 (파티클·점수 팝업·링). */
+  private readonly effects: EffectLayer;
 
   constructor(
     context: SceneContext,
@@ -106,6 +109,7 @@ export class GameScene implements Scene {
     this.paused = false;
     this.pauseMenuLayout = null;
     this.tutorial = new TutorialOverlay(context.renderer);
+    this.effects = new EffectLayer(this.randomFn);
   }
 
   async enter(args?: unknown): Promise<void> {
@@ -203,6 +207,7 @@ export class GameScene implements Scene {
   restartMap(): void {
     if (!this.map) return;
     this.persistClearSession(this.map.id);
+    this.effects.clear();
     this.setupGame();
   }
 
@@ -270,6 +275,7 @@ export class GameScene implements Scene {
     this.pressedHintBtn = false;
     this.pressedPauseBtn = false;
     this.pressedPauseMenuBtn = null;
+    this.effects.clear();
   }
 
   private recomputeLayout(): void {
@@ -306,6 +312,8 @@ export class GameScene implements Scene {
     if (this.paused) return;
     this.timer?.tick(deltaMs);
     this.hint?.tick(deltaMs);
+    // 이펙트는 게임 일시정지/인트로 외에서만 진행 — 매치 직후에도 자연스럽게 흐름.
+    this.effects.update(deltaMs);
   }
 
   render(): void {
@@ -320,6 +328,10 @@ export class GameScene implements Scene {
       invalidSelection: invalid,
       highlight: this.hint.getHighlighted(),
     });
+    // 이펙트는 보드 위, HUD 아래.
+    if (this.effects.hasActive()) {
+      this.effects.render(this.context.renderer.getCtx());
+    }
     const limitMs = this.timer.getLimitMs();
     const timeProgress =
       limitMs > 0 ? this.timer.getRemainingMs() / limitMs : 0;
@@ -542,11 +554,28 @@ export class GameScene implements Scene {
     if (!this.selector || !this.board) return;
     const result = this.selector.commit();
     if (result.valid) {
-      this.board.applyMatch(result.positions);
+      // 매치 적용 전 보드 좌표/lives 캡처 → 실제로 lives→0 으로 파괴된 셀만 이펙트 스폰.
+      const boardLayout = this.boardRenderer.getLayout();
+      const positions = result.positions;
+      const preLives: number[] = [];
+      for (const [c, r] of positions) preLives.push(this.board.getLives(c, r));
+      this.board.applyMatch(positions);
+      const destroyed: Array<readonly [number, number]> = [];
+      for (let i = 0; i < positions.length; i++) {
+        const [c, r] = positions[i];
+        if (preLives[i] >= 1 && this.board.getCell(c, r) === 0) {
+          destroyed.push([c, r] as const);
+        }
+      }
+      this.effects.spawnRemoval(
+        destroyed,
+        boardLayout,
+        positions.length === 3 ? "triple" : "pair",
+      );
       this.board.applyGravity();
       this.board.refill(this.randomFn);
       this.hint?.clear();
-      this.score += result.positions.length === 2 ? SCORE_PAIR : SCORE_TRIPLE;
+      this.score += positions.length === 2 ? SCORE_PAIR : SCORE_TRIPLE;
       this.context.audio.play("remove");
       if (findValidCombination(this.board) === null) {
         this.endGame("stuck");
