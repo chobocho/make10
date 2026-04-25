@@ -261,6 +261,26 @@
     - 가시 영역 밖 버튼은 컬링으로 생략.
 - 테스트 4건 추가 (100 맵 시 maxScrollY>0, 드래그 스크롤로 탭 취소, 미세 이동은 탭 유지, 스크롤 후 탭 정확히 히트). 누적 **177/177 pass**.
 
+## 2026-04-25 — 진행 중 게임 자동 저장/복구 (탭 전환 + 브라우저 종료 대응)
+
+**요청**: 게임 도중 다른 창으로 이동하거나 브라우저를 종료한 뒤 다시 열면, 이어하기/다시하기/메인 버튼이 있는 일시정지 팝업이 떠야 함.
+
+**구현**:
+- `SaveManager` 확장 — 기존 `progress` 스토어(최고 점수 보존)와 분리된 `session` 스토어 신설. IndexedDB 버전 1→2 업그레이드, 누락 스토어만 생성하므로 기존 데이터 유지. SaveManager 생성자에 두 번째 인자 `sessionStore` 추가(기본 null → 폴백). API: `saveSession`, `loadSession`, `clearSession`, `listSessions`(timestamp 내림차순).
+- `ProgressRecord`에 `hintsLeft?: number` 선택 필드 추가 — 세션 복원 시 남은 힌트 횟수 보존, progress 레코드는 무시.
+- `Timer.setElapsedMs(ms)` 추가 — 세션 복원 시 경과 시간을 직접 설정. 한도 이상이면 즉시 만료(콜백 미호출 — 복원은 만료 이벤트가 아님).
+- `GameScene`:
+  - `enter({ map, resumeFrom })` — `resumeFrom` 있으면 보드/점수/타이머/힌트를 복원, 인트로 스킵, 즉시 일시정지 메뉴 노출.
+  - `pauseGame()` — 자동으로 `saveSession()` 호출 (mapId/boardState/score/stars/timeLeft/hintsLeft/timestamp).
+  - `endGame()`/`restartMap()`/`goToTitle()` — 진행 종료/폐기 시 `clearSession(mapId)` 호출.
+  - `document.visibilitychange` 리스너 — `enter`에서 부착, `exit`에서 해제. hidden 진입 시 `pauseGame()` 자동 호출. SSR/test 환경(`typeof document === "undefined"`)에서는 no-op.
+- `GameApp.start()` — 부팅 시 `saveManager.listSessions()` 조회. 최신 세션이 있으면 해당 맵 로드 후 `fsm.start("game", { map, resumeFrom })`로 직행. 없거나 실패 시 타이틀로 폴백.
+- 테스트 (195/195 pass):
+  - `saveManager.test.ts` 5건 — session API 왕복/격리/clear/timestamp 정렬/sessionStore=null 폴백.
+  - `timer.test.ts` 3건 — setElapsedMs 정상/만료/예외.
+  - `gameScene.test.ts` 6건 — pauseGame이 세션 저장 / resumeFrom으로 보드+점수+타이머+힌트 복원 / 재개 후 세션 유지 / 종료(timeup) 시 세션 삭제 / 다시하기 시 세션 삭제 / 메인 시 세션 삭제.
+  - 기존 `gameScene.test.ts` fake ctx에 `strokeRect` 스텁 추가(복원 시 즉시 일시정지 오버레이 그려져 호출됨).
+
 ## 2026-04-24 — 일시정지 오버레이에 다시하기 / 메인 버튼 추가
 
 **누락**: 게임 화면에서 타이틀로 나가거나 현재 맵을 재시작할 UI 없음.

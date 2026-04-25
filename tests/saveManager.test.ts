@@ -97,6 +97,61 @@ describe("SaveManager (메모리 스토어 사용)", () => {
     assertEqual((await sm.load(1))?.score, 700);
   });
 
+  test("세션: saveSession → loadSession 왕복", async () => {
+    const sm = new SaveManager(new MemoryProgressStore(), new MemoryProgressStore());
+    const rec: ProgressRecord = {
+      mapId: 5,
+      boardState: [[1, 9]],
+      score: 250,
+      stars: 1,
+      timeLeft: 42,
+      hintsLeft: 2,
+      timestamp: 1_700_000_001_000,
+    };
+    assertTrue(await sm.saveSession(rec));
+    const loaded = await sm.loadSession(5);
+    assertEqual(loaded?.score, 250);
+    assertEqual(loaded?.hintsLeft, 2);
+    assertEqual(loaded?.timeLeft, 42);
+  });
+
+  test("세션: progress 스토어와 격리됨 (saveSession이 best 점수를 덮지 않음)", async () => {
+    const progress = new MemoryProgressStore();
+    const session = new MemoryProgressStore();
+    const sm = new SaveManager(progress, session);
+    await sm.saveBest(sample(7, 999));
+    await sm.saveSession({ ...sample(7, 100), hintsLeft: 1 });
+    assertEqual((await sm.load(7))?.score, 999, "progress(best) 그대로");
+    assertEqual((await sm.loadSession(7))?.score, 100, "session 별도 저장");
+  });
+
+  test("세션: clearSession 후 loadSession 은 null", async () => {
+    const sm = new SaveManager(new MemoryProgressStore(), new MemoryProgressStore());
+    await sm.saveSession({ ...sample(3, 50), hintsLeft: 0 });
+    assertTrue(await sm.clearSession(3));
+    assertEqual(await sm.loadSession(3), null);
+  });
+
+  test("세션: listSessions 는 timestamp 내림차순(최신 우선)", async () => {
+    const sm = new SaveManager(new MemoryProgressStore(), new MemoryProgressStore());
+    await sm.saveSession({ ...sample(1, 10), timestamp: 100, hintsLeft: 0 });
+    await sm.saveSession({ ...sample(2, 20), timestamp: 300, hintsLeft: 0 });
+    await sm.saveSession({ ...sample(3, 30), timestamp: 200, hintsLeft: 0 });
+    const list = await sm.listSessions();
+    assertDeepEqual(
+      list.map((r) => r.mapId),
+      [2, 3, 1],
+    );
+  });
+
+  test("세션: sessionStore 미주입 시 모두 폴백", async () => {
+    const sm = new SaveManager(new MemoryProgressStore()); // session=null
+    assertFalse(await sm.saveSession({ ...sample(1, 0), hintsLeft: 0 }));
+    assertEqual(await sm.loadSession(1), null);
+    assertFalse(await sm.clearSession(1));
+    assertDeepEqual(await sm.listSessions(), []);
+  });
+
   test("스토어 내부 오류는 false/null로 삼킴 (게임 계속)", async () => {
     class ThrowingStore implements ProgressStore {
       async put(): Promise<void> {
@@ -112,11 +167,15 @@ describe("SaveManager (메모리 스토어 사용)", () => {
         throw new Error("boom");
       }
     }
-    const sm = new SaveManager(new ThrowingStore());
+    const sm = new SaveManager(new ThrowingStore(), new ThrowingStore());
     assertFalse(await sm.save(sample(1, 0)));
     assertFalse(await sm.saveBest(sample(1, 0)));
     assertEqual(await sm.load(1), null);
     assertFalse(await sm.delete(1));
     assertDeepEqual(await sm.list(), []);
+    assertFalse(await sm.saveSession({ ...sample(1, 0), hintsLeft: 0 }));
+    assertEqual(await sm.loadSession(1), null);
+    assertFalse(await sm.clearSession(1));
+    assertDeepEqual(await sm.listSessions(), []);
   });
 });

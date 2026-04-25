@@ -4,7 +4,11 @@
  * IndexedDB를 일차 저장소로 사용하되, 실패/미지원 환경에서는 조용히 no-op으로 동작해
  * 게임은 계속 진행된다 (CLAUDE.md §8-2).
  *
- * 저장 로직은 `ProgressStore` 추상화 뒤에 두어 테스트에서 메모리 스토어로 교체할 수 있다.
+ * 두 종류의 저장소를 사용한다:
+ *   - progress: 맵별 최고 점수 기록 (영속, 갱신은 saveBest 로 더 높을 때만).
+ *   - session: 진행 중인 1회용 게임 상태 (탭 전환/브라우저 종료 후 복구). 매 일시정지 시 덮어씀.
+ *
+ * 두 스토어는 동일한 IndexedDB(`make10db`) 안의 별도 object store 로 분리되어 서로 영향이 없다.
  */
 export interface ProgressRecord {
   readonly mapId: number;
@@ -13,6 +17,8 @@ export interface ProgressRecord {
   /** 이 기록 시점의 별점 (0~3). */
   readonly stars?: number;
   readonly timeLeft: number;
+  /** 세션 복원용 — 일시정지 시점의 남은 힌트 횟수. progress(최고 점수) 기록에서는 무시된다. */
+  readonly hintsLeft?: number;
   readonly timestamp: number;
 }
 
@@ -43,41 +49,53 @@ export class MemoryProgressStore implements ProgressStore {
   }
 }
 
+const DB_VERSION = 2;
+const STORE_PROGRESS = "progress";
+const STORE_SESSION = "session";
+
+/**
+ * 공유 DB 오픈. 두 스토어(progress/session)를 동일 DB 인스턴스에서 관리하기 위한 단일 진입점.
+ * 버전 2로 업그레이드하며 누락된 스토어를 생성한다(이미 존재하면 그대로 둠 → 기존 progress 데이터 보존).
+ */
+function openMake10Db(factory: IDBFactory, dbName: string): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = factory.open(dbName, DB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(STORE_PROGRESS)) {
+        db.createObjectStore(STORE_PROGRESS, { keyPath: "mapId" });
+      }
+      if (!db.objectStoreNames.contains(STORE_SESSION)) {
+        db.createObjectStore(STORE_SESSION, { keyPath: "mapId" });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error ?? new Error("IndexedDB open failed"));
+    req.onblocked = () => reject(new Error("IndexedDB open blocked"));
+  });
+}
+
 export interface IndexedDbProgressStoreOptions {
   readonly dbName?: string;
-  readonly version?: number;
   readonly storeName?: string;
 }
 
 export class IndexedDbProgressStore implements ProgressStore {
   private readonly factory: IDBFactory;
   private readonly dbName: string;
-  private readonly version: number;
   private readonly storeName: string;
   private dbPromise: Promise<IDBDatabase> | null;
 
   constructor(factory: IDBFactory, options: IndexedDbProgressStoreOptions = {}) {
     this.factory = factory;
     this.dbName = options.dbName ?? "make10db";
-    this.version = options.version ?? 1;
-    this.storeName = options.storeName ?? "progress";
+    this.storeName = options.storeName ?? STORE_PROGRESS;
     this.dbPromise = null;
   }
 
   private openDb(): Promise<IDBDatabase> {
     if (this.dbPromise) return this.dbPromise;
-    this.dbPromise = new Promise((resolve, reject) => {
-      const req = this.factory.open(this.dbName, this.version);
-      req.onupgradeneeded = () => {
-        const db = req.result;
-        if (!db.objectStoreNames.contains(this.storeName)) {
-          db.createObjectStore(this.storeName, { keyPath: "mapId" });
-        }
-      };
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error ?? new Error("IndexedDB open failed"));
-      req.onblocked = () => reject(new Error("IndexedDB open blocked"));
-    });
+    this.dbPromise = openMake10Db(this.factory, this.dbName);
     return this.dbPromise;
   }
 
@@ -134,9 +152,14 @@ export class IndexedDbProgressStore implements ProgressStore {
 
 export class SaveManager {
   private readonly store: ProgressStore | null;
+  private readonly sessionStore: ProgressStore | null;
 
-  constructor(store: ProgressStore | null) {
+  constructor(
+    store: ProgressStore | null,
+    sessionStore: ProgressStore | null = null,
+  ) {
     this.store = store;
+    this.sessionStore = sessionStore;
   }
 
   isAvailable(): boolean {
@@ -196,6 +219,49 @@ export class SaveManager {
       return [];
     }
   }
+
+  // --- 세션(진행 중 게임) API ---
+  // progress 와 분리된 별도 스토어. 일시정지 시 덮어쓰고, 게임 종료/메인/다시하기 시 삭제.
+
+  async saveSession(record: ProgressRecord): Promise<boolean> {
+    if (!this.sessionStore) return false;
+    try {
+      await this.sessionStore.put(record);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async loadSession(mapId: number): Promise<ProgressRecord | null> {
+    if (!this.sessionStore) return null;
+    try {
+      return await this.sessionStore.get(mapId);
+    } catch {
+      return null;
+    }
+  }
+
+  async clearSession(mapId: number): Promise<boolean> {
+    if (!this.sessionStore) return false;
+    try {
+      await this.sessionStore.delete(mapId);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** 모든 진행 중 세션을 timestamp 내림차순(최신 우선)으로 반환. */
+  async listSessions(): Promise<ProgressRecord[]> {
+    if (!this.sessionStore) return [];
+    try {
+      const all = await this.sessionStore.list();
+      return all.slice().sort((a, b) => b.timestamp - a.timestamp);
+    } catch {
+      return [];
+    }
+  }
 }
 
 /**
@@ -204,10 +270,16 @@ export class SaveManager {
  */
 export function createDefaultSaveManager(): SaveManager {
   const g = globalThis as unknown as { indexedDB?: IDBFactory };
-  if (!g.indexedDB) return new SaveManager(null);
+  if (!g.indexedDB) return new SaveManager(null, null);
   try {
-    return new SaveManager(new IndexedDbProgressStore(g.indexedDB));
+    const progress = new IndexedDbProgressStore(g.indexedDB, {
+      storeName: STORE_PROGRESS,
+    });
+    const session = new IndexedDbProgressStore(g.indexedDB, {
+      storeName: STORE_SESSION,
+    });
+    return new SaveManager(progress, session);
   } catch {
-    return new SaveManager(null);
+    return new SaveManager(null, null);
   }
 }

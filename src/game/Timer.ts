@@ -45,6 +45,23 @@ export class Timer {
     this.running = false;
   }
 
+  /**
+   * 경과 시간을 직접 설정한다(세션 복원용). 한도 이상이면 즉시 만료 처리한다.
+   * 주: `onExpire` 콜백은 호출하지 않는다 — 복원은 만료 이벤트가 아니라 상태 재구성이므로.
+   */
+  setElapsedMs(ms: number): void {
+    if (!Number.isFinite(ms) || ms < 0) {
+      throw new Error(`Timer.setElapsedMs: 음수/비유한 값 (${ms}).`);
+    }
+    if (ms >= this.limitMs) {
+      this.elapsedMs = this.limitMs;
+      this.expiredFlag = true;
+      this.running = false;
+    } else {
+      this.elapsedMs = ms;
+    }
+  }
+
   tick(deltaMs: number): void {
     if (!this.running || this.expiredFlag) return;
     if (deltaMs <= 0) return;

@@ -12,7 +12,11 @@ import { GameScene, GameResult } from "../src/scenes/GameScene";
 import type { SceneContext, SceneId } from "../src/scenes/Scene";
 import { CanvasRenderer } from "../src/renderer/CanvasRenderer";
 import { AudioManager, SoundName } from "../src/audio/AudioManager";
-import { SaveManager, MemoryProgressStore } from "../src/storage/SaveManager";
+import {
+  SaveManager,
+  MemoryProgressStore,
+  ProgressRecord,
+} from "../src/storage/SaveManager";
 import type { MapData } from "../src/data/MapLoader";
 
 function makeFakeRenderer(width = 480, height = 800): CanvasRenderer {
@@ -23,6 +27,7 @@ function makeFakeRenderer(width = 480, height = 800): CanvasRenderer {
     textAlign: "left",
     textBaseline: "top",
     fillRect() {},
+    strokeRect() {},
     clearRect() {},
     fillText() {},
     setTransform() {},
@@ -52,6 +57,7 @@ function makeCtx(renderer: CanvasRenderer): {
   context: SceneContext;
   audioCalls: SoundName[];
   transitions: Array<{ next: SceneId; args: unknown }>;
+  saveManager: SaveManager;
 } {
   const audioCalls: SoundName[] = [];
   const audio = new AudioManager({ ctxCtor: null });
@@ -59,17 +65,21 @@ function makeCtx(renderer: CanvasRenderer): {
     audioCalls.push(n);
   };
   const transitions: Array<{ next: SceneId; args: unknown }> = [];
+  const saveManager = new SaveManager(
+    new MemoryProgressStore(),
+    new MemoryProgressStore(),
+  );
   const context: SceneContext = {
     renderer,
     audio,
-    saveManager: new SaveManager(new MemoryProgressStore()),
+    saveManager,
     transition: (next, args) => transitions.push({ next, args }),
     loadMap: async () => {
       throw new Error("not used");
     },
     maxMapId: 10,
   };
-  return { context, audioCalls, transitions };
+  return { context, audioCalls, transitions, saveManager };
 }
 
 function tinyMap(): MapData {
@@ -457,6 +467,181 @@ describe("GameScene", () => {
     const res = transitions[transitions.length - 1].args as GameResult;
     assertEqual(res.reason, "stuck");
     assertFalse(res.cleared);
+  });
+
+  test("일시정지 시 세션 저장 (mapId/score/timeLeft/hintsLeft/boardState)", async () => {
+    const r = makeFakeRenderer();
+    const { context, saveManager } = makeCtx(r);
+    const scene = new GameScene(context, () => 0.5, 0);
+    await scene.enter({ map: tinyMap() });
+    scene.render();
+    scene.pauseGame();
+    // 마이크로태스크 완료 대기
+    await Promise.resolve();
+    const rec = await saveManager.loadSession(99);
+    assertTrue(rec !== null, "세션 저장됨");
+    if (rec) {
+      assertEqual(rec.mapId, 99);
+      assertEqual(rec.score, 0);
+      assertEqual(rec.hintsLeft, 1); // tinyMap.hintCount
+      assertTrue(rec.timeLeft > 0);
+      assertEqual(rec.boardState.length, 1);
+      assertEqual(rec.boardState[0].length, 2);
+    }
+  });
+
+  test("resumeFrom: 보드/점수/남은시간/힌트 복원 + 즉시 일시정지", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 2500);
+    const resumeFrom: ProgressRecord = {
+      mapId: 99,
+      boardState: [[7, 3]],
+      score: 350,
+      stars: 1,
+      timeLeft: 12, // 초
+      hintsLeft: 0,
+      timestamp: 1_700_000_002_000,
+    };
+    await scene.enter({ map: tinyMap(), resumeFrom });
+    // 인트로는 스킵, 일시정지로 시작
+    assertFalse(scene._isInIntro());
+    assertTrue(scene.isPaused());
+    assertEqual(scene._getScore(), 350);
+    // 보드 복원
+    const snap = (scene as unknown as { board: { snapshot(): number[][] } }).board.snapshot();
+    assertEqual(snap[0][0], 7);
+    assertEqual(snap[0][1], 3);
+    // 타이머 남은 ms ≈ 12000 (한도 5초보다 큰 값을 넣어도 setElapsedMs는 클램프하지 않지만,
+    // 여기서는 timeLimit=5초 → 12초 복원은 한도 초과 → 만료 처리되므로 timeLimit=60 짜리 맵으로 다시 검증)
+  });
+
+  test("resumeFrom: 시간/힌트 복원 정확성 (timeLimit 60s, timeLeft=42)", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 0);
+    const map: MapData = { ...tinyMap(), timeLimit: 60, hintCount: 3 };
+    const resumeFrom: ProgressRecord = {
+      mapId: 99,
+      boardState: [[4, 6]],
+      score: 0,
+      timeLeft: 42,
+      hintsLeft: 1,
+      timestamp: 1_700_000_002_000,
+    };
+    await scene.enter({ map, resumeFrom });
+    const timer = (scene as unknown as { timer: { getRemainingMs(): number; getLimitMs(): number } }).timer;
+    assertEqual(timer.getLimitMs(), 60_000);
+    assertEqual(timer.getRemainingMs(), 42_000);
+    const hint = (scene as unknown as { hint: { getRemaining(): number } }).hint;
+    assertEqual(hint.getRemaining(), 1, "복원된 힌트 잔량");
+  });
+
+  test("resumeFrom 후 '재개' 탭 → 타이머 재개, 세션 유지", async () => {
+    const r = makeFakeRenderer();
+    const { context, saveManager } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 0);
+    const map: MapData = { ...tinyMap(), timeLimit: 60 };
+    const resumeFrom: ProgressRecord = {
+      mapId: 99,
+      boardState: [[4, 6]],
+      score: 100,
+      timeLeft: 30,
+      hintsLeft: 0,
+      timestamp: 1_700_000_003_000,
+    };
+    await scene.enter({ map, resumeFrom });
+    scene.render();
+    assertTrue(scene.isPaused());
+    const menu = (scene as unknown as {
+      pauseMenuLayout: { resume: { x: number; y: number; width: number; height: number } };
+    }).pauseMenuLayout;
+    const cx = menu.resume.x + menu.resume.width / 2;
+    const cy = menu.resume.y + menu.resume.height / 2;
+    scene.onPointerDown!(cx, cy);
+    scene.onPointerUp!(cx, cy);
+    assertFalse(scene.isPaused());
+    const timer = (scene as unknown as { timer: { isRunning(): boolean } }).timer;
+    assertTrue(timer.isRunning(), "재개 시 타이머 실행 중");
+    // 세션은 유지 (다음 일시정지/재진입을 위해)
+    await Promise.resolve();
+    assertTrue((await saveManager.loadSession(99)) !== null);
+  });
+
+  test("게임 종료(timeup) 시 세션 삭제", async () => {
+    const r = makeFakeRenderer();
+    const { context, saveManager } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 0);
+    await scene.enter({ map: { ...tinyMap(), timeLimit: 1 } });
+    scene.render();
+    scene.pauseGame();
+    await Promise.resolve();
+    assertTrue((await saveManager.loadSession(99)) !== null);
+    scene.resumeGame();
+    scene.update(2000); // 만료
+    assertTrue(scene._isEnded());
+    await Promise.resolve();
+    await Promise.resolve();
+    assertEqual(await saveManager.loadSession(99), null, "종료 시 세션 삭제");
+  });
+
+  test("일시정지 메뉴 '다시하기' → 세션 삭제 + 점수 리셋", async () => {
+    const r = makeFakeRenderer();
+    const { context, saveManager } = makeCtx(r);
+    const scene = new GameScene(context, () => 0.5, 0);
+    await scene.enter({
+      map: {
+        ...tinyMap(),
+        cols: 2,
+        rows: 2,
+        initialBoard: [
+          [4, 6],
+          [5, 5],
+        ],
+      },
+    });
+    scene.render();
+    // 한 번 매치하여 점수 획득
+    const b = (scene as unknown as { boardRenderer: { getLayout(): any } }).boardRenderer.getLayout();
+    scene.onPointerDown!(b.originX + b.cellSize / 2, b.originY + b.cellSize / 2);
+    scene.onPointerMove!(b.originX + b.cellSize + b.cellSize / 2, b.originY + b.cellSize / 2);
+    scene.onPointerUp!(b.originX + b.cellSize + b.cellSize / 2, b.originY + b.cellSize / 2);
+    assertTrue(scene._getScore() >= 100);
+    scene.pauseGame();
+    await Promise.resolve();
+    assertTrue((await saveManager.loadSession(99)) !== null);
+    // 다시하기 버튼 탭
+    const menu = (scene as unknown as {
+      pauseMenuLayout: { restart: { x: number; y: number; width: number; height: number } };
+    }).pauseMenuLayout;
+    const rx = menu.restart.x + menu.restart.width / 2;
+    const ry = menu.restart.y + menu.restart.height / 2;
+    scene.onPointerDown!(rx, ry);
+    scene.onPointerUp!(rx, ry);
+    await Promise.resolve();
+    assertEqual(scene._getScore(), 0);
+    assertEqual(await saveManager.loadSession(99), null, "다시하기로 세션 폐기");
+  });
+
+  test("일시정지 메뉴 '메인' → 세션 삭제 + title 전환", async () => {
+    const r = makeFakeRenderer();
+    const { context, saveManager, transitions } = makeCtx(r);
+    const scene = new GameScene(context, Math.random, 0);
+    await scene.enter({ map: tinyMap() });
+    scene.render();
+    scene.pauseGame();
+    await Promise.resolve();
+    assertTrue((await saveManager.loadSession(99)) !== null);
+    const menu = (scene as unknown as {
+      pauseMenuLayout: { exit: { x: number; y: number; width: number; height: number } };
+    }).pauseMenuLayout;
+    const ex = menu.exit.x + menu.exit.width / 2;
+    const ey = menu.exit.y + menu.exit.height / 2;
+    scene.onPointerDown!(ex, ey);
+    scene.onPointerUp!(ex, ey);
+    assertEqual(transitions[transitions.length - 1].next, "title");
+    await Promise.resolve();
+    assertEqual(await saveManager.loadSession(99), null, "메인으로 세션 폐기");
   });
 
   test("무효 선택 시 invalid 사운드", async () => {

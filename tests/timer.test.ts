@@ -98,6 +98,33 @@ describe("Timer", () => {
     assertEqual(t.getRemainingSeconds(), 9); // 8.5s → 9
   });
 
+  test("setElapsedMs: 경과 시간 직접 설정 (세션 복원)", () => {
+    const t = new Timer(10);
+    t.setElapsedMs(7000);
+    assertEqual(t.getRemainingMs(), 3000);
+    assertEqual(t.getLimitMs(), 10_000); // 한도는 그대로
+    // 이후 start → tick 정상 진행
+    t.start();
+    t.tick(1000);
+    assertEqual(t.getRemainingMs(), 2000);
+  });
+
+  test("setElapsedMs: 한도 이상이면 만료 처리 (콜백은 호출 안 됨)", () => {
+    const t = new Timer(5);
+    let calls = 0;
+    t.onExpired(() => calls++);
+    t.setElapsedMs(10_000);
+    assertTrue(t.isExpired());
+    assertFalse(t.isRunning());
+    assertEqual(calls, 0); // 복원은 만료 이벤트가 아님
+  });
+
+  test("setElapsedMs: 음수/비유한 값은 에러", () => {
+    const t = new Timer(5);
+    assertThrows(() => t.setElapsedMs(-1));
+    assertThrows(() => t.setElapsedMs(NaN));
+  });
+
   test("음수/0 deltaMs는 무시", () => {
     const t = new Timer(5);
     t.start();

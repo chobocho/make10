@@ -27,9 +27,15 @@ import {
   hitButton,
   ButtonRect,
 } from "./SceneLayout";
+import type { ProgressRecord } from "../storage/SaveManager";
 
 export interface GameSceneArgs {
   readonly map: MapData;
+  /**
+   * 진행 중 세션에서 복원할 때 전달. 보드/점수/타이머/힌트 잔량을 그대로 복원하고
+   * 인트로를 건너뛴 뒤 즉시 일시정지 오버레이를 띄운다.
+   */
+  readonly resumeFrom?: ProgressRecord;
 }
 
 export type GameEndReason = "cleared" | "timeup" | "stuck";
@@ -102,27 +108,41 @@ export class GameScene implements Scene {
     const a = args as GameSceneArgs | undefined;
     if (!a?.map) throw new Error("GameScene.enter: map 인자 필요.");
     this.map = a.map;
-    this.setupGame();
+    this.setupGame(a.resumeFrom);
     this.recomputeLayout();
     this.context.renderer.onResize(() => this.recomputeLayout());
+    this.attachVisibilityListener();
+    // 세션 복원이면 인트로 없이 즉시 일시정지 메뉴 노출 (이어하기 / 다시하기 / 메인).
+    if (a.resumeFrom) this.pauseGame();
   }
 
-  /** 현재 `this.map`을 기반으로 게임 상태를 초기화/재초기화한다. */
-  private setupGame(): void {
+  /**
+   * 현재 `this.map`을 기반으로 게임 상태를 초기화/재초기화한다.
+   * `resumeFrom`이 주어지면 해당 스냅샷(보드/점수/남은 시간/남은 힌트)으로 복원한다.
+   */
+  private setupGame(resumeFrom?: ProgressRecord): void {
     if (!this.map) return;
-    this.board = new Board(this.map.initialBoard);
+    const initialBoard = resumeFrom?.boardState ?? this.map.initialBoard;
+    this.board = new Board(initialBoard);
     this.selector = new Selector(this.board);
     this.timer = new Timer(this.map.timeLimit);
-    this.hint = new Hint(this.board, this.map.hintCount);
-    this.score = 0;
+    if (resumeFrom) {
+      const remainingMs = Math.max(0, resumeFrom.timeLeft) * 1000;
+      const elapsedMs = Math.max(0, this.timer.getLimitMs() - remainingMs);
+      this.timer.setElapsedMs(elapsedMs);
+    }
+    const hintCount = resumeFrom?.hintsLeft ?? this.map.hintCount;
+    this.hint = new Hint(this.board, hintCount);
+    this.score = resumeFrom?.score ?? 0;
     this.ended = false;
     this.pressedHintBtn = false;
     this.pressedPauseBtn = false;
     this.pressedPauseMenuBtn = null;
     this.paused = false;
-    this.introMsLeft = this.introDurationMs;
+    this.introMsLeft = resumeFrom ? 0 : this.introDurationMs;
     this.timer.onExpired(() => this.endGame("timeup"));
-    if (this.introMsLeft <= 0) this.timer.start();
+    // 복원 경로는 caller(`enter`)에서 즉시 pauseGame 으로 전환되므로 여기서 timer.start 호출 안 함.
+    if (this.introMsLeft <= 0 && !resumeFrom) this.timer.start();
   }
 
   private isInIntro(): boolean {
@@ -144,6 +164,7 @@ export class GameScene implements Scene {
     this.hint?.clear();
     this.pressedHintBtn = false;
     this.computePauseMenu();
+    this.persistSaveSession();
   }
 
   resumeGame(): void {
@@ -151,18 +172,56 @@ export class GameScene implements Scene {
     this.paused = false;
     this.timer?.resume();
     this.pressedPauseMenuBtn = null;
+    // 세션은 일부러 유지 — 다시 일시정지/탭전환 시 갱신, 정상 종료 시 endGame에서 삭제.
   }
 
-  /** 현재 맵을 재시작 (점수/보드/타이머 리셋, 인트로 재표시). */
+  /** 현재 맵을 재시작 (점수/보드/타이머 리셋, 인트로 재표시). 진행 중 세션은 폐기. */
   restartMap(): void {
     if (!this.map) return;
+    this.persistClearSession(this.map.id);
     this.setupGame();
   }
 
-  /** 타이틀로 이동. */
+  /** 타이틀로 이동. 진행 중 세션은 폐기 (사용자가 명시적으로 나가는 선택). */
   private goToTitle(): void {
+    if (this.map) this.persistClearSession(this.map.id);
     this.ended = true; // update()/입력 처리 중단
     this.context.transition("title");
+  }
+
+  /** 현재 진행 상태를 세션 스토어에 저장(fire-and-forget). */
+  private persistSaveSession(): void {
+    if (!this.map || !this.board || !this.timer || !this.hint) return;
+    const record: ProgressRecord = {
+      mapId: this.map.id,
+      boardState: this.board.snapshot(),
+      score: this.score,
+      stars: computeStars(this.score, this.map.starThresholds),
+      timeLeft: this.timer.getRemainingSeconds(),
+      hintsLeft: this.hint.getRemaining(),
+      timestamp: Date.now(),
+    };
+    void this.context.saveManager.saveSession(record);
+  }
+
+  private persistClearSession(mapId: number): void {
+    void this.context.saveManager.clearSession(mapId);
+  }
+
+  /** 탭/창 전환·홈버튼·화면잠금 등 visibility hidden 시 자동 일시정지. */
+  private onVisibilityChange = (): void => {
+    if (typeof document === "undefined") return;
+    if (document.hidden) this.pauseGame();
+  };
+
+  private attachVisibilityListener(): void {
+    if (typeof document === "undefined") return;
+    document.addEventListener("visibilitychange", this.onVisibilityChange);
+  }
+
+  private detachVisibilityListener(): void {
+    if (typeof document === "undefined") return;
+    document.removeEventListener("visibilitychange", this.onVisibilityChange);
   }
 
   private computePauseMenu(): void {
@@ -179,6 +238,7 @@ export class GameScene implements Scene {
   }
 
   exit(): void {
+    this.detachVisibilityListener();
     this.timer?.pause();
     this.paused = false;
     this.pressedHintBtn = false;
@@ -466,6 +526,7 @@ export class GameScene implements Scene {
   private endGame(reason: GameEndReason): void {
     if (this.ended || !this.timer || !this.map) return;
     this.ended = true;
+    this.persistClearSession(this.map.id);
     this.timer.pause();
     const finalScore = this.score;
     const stars = computeStars(finalScore, this.map.starThresholds);

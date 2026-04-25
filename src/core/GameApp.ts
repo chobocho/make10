@@ -76,10 +76,30 @@ export class GameApp {
     this.fsm.register("title", new TitleScene(context));
     this.fsm.register("game", new GameScene(context));
     this.fsm.register("result", new ResultScene(context));
-    await this.fsm.start("title");
+    // 진행 중 세션이 남아 있으면 곧장 일시정지된 게임 씬으로 진입한다
+    // (탭/브라우저 종료 후 재진입 시 이어하기/다시하기/메인 팝업이 보이게).
+    const resumed = await this.tryResumeSession();
+    if (!resumed) await this.fsm.start("title");
     this.running = true;
     this.lastTs = (this.win.performance?.now?.() ?? Date.now());
     this.loop();
+  }
+
+  /**
+   * 가장 최근 세션을 조회해 해당 맵을 로드한 뒤 GameScene을 paused 상태로 시작한다.
+   * 세션 없음/맵 로드 실패 시 false 를 반환해 호출자가 타이틀로 폴백하도록 한다.
+   */
+  private async tryResumeSession(): Promise<boolean> {
+    try {
+      const sessions = await this.saveManager.listSessions();
+      const latest = sessions[0];
+      if (!latest) return false;
+      const map = await this.loadMapFn(latest.mapId);
+      await this.fsm.start("game", { map, resumeFrom: latest });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   stop(): void {
