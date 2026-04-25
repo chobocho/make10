@@ -1,13 +1,16 @@
 /**
- * gen-maps.ts — data/mapNNN.json 를 프로시저럴하게 생성.
+ * gen-maps.ts — data/maps.json 을 프로시저럴하게 생성/갱신.
  *
  * 실행:  npx ts-node tools/gen-maps.ts [fromId=1] [toId=10]
  *
  * 1~9 사이 임의 숫자로 보드를 채운 뒤, 초기 유효 조합(합=10)이 최소 1개 이상
  * 존재하는지 검증해 없으면 재시도한다. 중력 적용(Bejeweled 스타일) 하에서
  * 자명하게 전체 클리어가 가능할 필요는 없다.
+ *
+ * 모든 맵은 단일 묶음 파일 `data/maps.json` (id 오름차순 배열)에 저장된다.
+ * 기존 파일이 있으면 읽어서 [from..to] 범위만 교체하고 다른 id는 보존한다.
  */
-import { writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { Board } from "../src/game/Board";
 import { findValidCombination } from "../src/game/Hint";
@@ -314,10 +317,24 @@ export function generateMap(id: number): MapSpec {
   return spec;
 }
 
-function writeMap(outDir: string, spec: MapSpec): string {
-  const filename = `map${String(spec.id).padStart(3, "0")}.json`;
-  const path = join(outDir, filename);
-  writeFileSync(path, JSON.stringify(spec, null, 2) + "\n");
+function mapsFilePath(outDir: string): string {
+  return join(outDir, "maps.json");
+}
+
+function readExistingMaps(outDir: string): MapSpec[] {
+  const path = mapsFilePath(outDir);
+  if (!existsSync(path)) return [];
+  const raw = JSON.parse(readFileSync(path, "utf-8"));
+  if (!Array.isArray(raw)) {
+    throw new Error(`기존 maps.json 이 배열 아님: ${path}`);
+  }
+  return raw as MapSpec[];
+}
+
+function writeMaps(outDir: string, maps: MapSpec[]): string {
+  maps.sort((a, b) => a.id - b.id);
+  const path = mapsFilePath(outDir);
+  writeFileSync(path, JSON.stringify(maps) + "\n");
   return path;
 }
 
@@ -330,13 +347,18 @@ function main(): void {
   }
   const outDir = resolve(__dirname, "..", "data");
   if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
+  // 기존 묶음을 읽어 [from..to] 외의 id는 그대로 보존하고, 범위 내만 교체.
+  const byId = new Map<number, MapSpec>();
+  for (const m of readExistingMaps(outDir)) byId.set(m.id, m);
   for (let id = from; id <= to; id++) {
     const spec = generateMap(id);
-    const path = writeMap(outDir, spec);
+    byId.set(id, spec);
     console.log(
-      `wrote ${path}  [${spec.cols}x${spec.rows}, ${spec.timeLimit}s, hints=${spec.hintCount}]`,
+      `regen id=${id}  [${spec.cols}x${spec.rows}, ${spec.timeLimit}s, hints=${spec.hintCount}]`,
     );
   }
+  const path = writeMaps(outDir, Array.from(byId.values()));
+  console.log(`wrote ${path} (${byId.size} maps)`);
 }
 
 if (require.main === module) {

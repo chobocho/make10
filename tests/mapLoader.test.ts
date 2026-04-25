@@ -12,16 +12,24 @@ import { join } from "node:path";
 import {
   validateMap,
   parseMapJson,
-  mapJsonUrl,
+  parseMapsJson,
+  mapsJsonUrl,
   loadMap,
+  clearMapsCache,
+  MapData,
 } from "../src/data/MapLoader";
 import { findValidCombination } from "../src/game/Hint";
 import { Board } from "../src/game/Board";
 
 const DATA_DIR = join(__dirname, "..", "data");
+const MAPS_JSON_TEXT = readFileSync(join(DATA_DIR, "maps.json"), "utf-8");
+const ALL_MAPS: ReadonlyArray<MapData> = parseMapsJson(MAPS_JSON_TEXT);
+const MAP_BY_ID = new Map<number, MapData>(ALL_MAPS.map((m) => [m.id, m]));
 
-function readMap(id: number): string {
-  return readFileSync(join(DATA_DIR, `map${String(id).padStart(3, "0")}.json`), "utf-8");
+function getMap(id: number): MapData {
+  const m = MAP_BY_ID.get(id);
+  if (!m) throw new Error(`map${id} 누락`);
+  return m;
 }
 
 describe("MapLoader — validation", () => {
@@ -94,22 +102,29 @@ describe("MapLoader — validation", () => {
     assertThrows(() => parseMapJson("not-json"));
   });
 
-  test("mapJsonUrl: 3자리 zero-padded", () => {
-    assertEqual(mapJsonUrl(7), "data/map007.json");
-    assertEqual(mapJsonUrl(123), "data/map123.json");
+  test("mapsJsonUrl: 단일 묶음 경로", () => {
+    assertEqual(mapsJsonUrl(), "data/maps.json");
+    assertEqual(mapsJsonUrl("custom"), "custom/maps.json");
   });
 
-  test("loadMap: 주입된 fetcher 사용", async () => {
-    const text = readMap(1);
+  test("loadMap: 주입된 fetcher 로 묶음 1회 fetch 후 캐시", async () => {
+    clearMapsCache();
+    let calls = 0;
     const fakeFetch = async (url: string): Promise<Response> => {
-      assertEqual(url, "data/map001.json");
-      return new Response(text, { status: 200 });
+      calls++;
+      assertEqual(url, "data/maps.json");
+      return new Response(MAPS_JSON_TEXT, { status: 200 });
     };
-    const m = await loadMap(1, fakeFetch as unknown as typeof fetch);
-    assertEqual(m.id, 1);
+    const m1 = await loadMap(1, fakeFetch as unknown as typeof fetch);
+    const m2 = await loadMap(2, fakeFetch as unknown as typeof fetch);
+    assertEqual(m1.id, 1);
+    assertEqual(m2.id, 2);
+    assertEqual(calls, 1);
+    clearMapsCache();
   });
 
-  test("loadMap: 404는 에러", async () => {
+  test("loadMap: 404는 에러 (캐시도 비워져 재시도 가능)", async () => {
+    clearMapsCache();
     const fakeFetch = async (): Promise<Response> =>
       new Response("", { status: 404 });
     let threw = false;
@@ -119,6 +134,25 @@ describe("MapLoader — validation", () => {
       threw = true;
     }
     assertTrue(threw);
+    clearMapsCache();
+  });
+
+  test("loadMap: 묶음에 없는 id는 에러", async () => {
+    clearMapsCache();
+    const fakeFetch = async (): Promise<Response> =>
+      new Response(MAPS_JSON_TEXT, { status: 200 });
+    let threw = false;
+    try {
+      await loadMap(99999, fakeFetch as unknown as typeof fetch);
+    } catch {
+      threw = true;
+    }
+    assertTrue(threw);
+    clearMapsCache();
+  });
+
+  test("parseMapsJson: 배열 아님 거부", () => {
+    assertThrows(() => parseMapsJson("{}"));
   });
 });
 
@@ -127,7 +161,7 @@ const MAP_COUNT = 300;
 describe("생성된 맵 JSON 실제 검증 (전체 300개)", () => {
   test("300개 맵 모두 스키마 유효 & 유효 조합 존재", () => {
     for (let id = 1; id <= MAP_COUNT; id++) {
-      const m = parseMapJson(readMap(id));
+      const m = getMap(id);
       assertEqual(m.id, id);
       assertEqual(m.initialBoard.length, m.rows);
       for (const row of m.initialBoard) assertEqual(row.length, m.cols);
@@ -142,7 +176,7 @@ describe("생성된 맵 JSON 실제 검증 (전체 300개)", () => {
   });
 
   test("map001 합이 10인 쌍을 포함", () => {
-    const m = parseMapJson(readMap(1));
+    const m = getMap(1);
     const board = new Board(m.initialBoard);
     const combo = findValidCombination(board);
     assertTrue(combo !== null);
@@ -153,7 +187,7 @@ describe("생성된 맵 JSON 실제 검증 (전체 300개)", () => {
   test("모든 맵의 timeLimit > 0, hintCount ≥ 0, id 1..300", () => {
     const ids: number[] = [];
     for (let id = 1; id <= MAP_COUNT; id++) {
-      const m = parseMapJson(readMap(id));
+      const m = getMap(id);
       assertTrue(m.timeLimit > 0);
       assertTrue(m.hintCount >= 0);
       ids.push(m.id);
@@ -165,7 +199,7 @@ describe("생성된 맵 JSON 실제 검증 (전체 300개)", () => {
     function avgTime(from: number, to: number): number {
       let total = 0;
       for (let id = from; id <= to; id++) {
-        total += parseMapJson(readMap(id)).timeLimit;
+        total += getMap(id).timeLimit;
       }
       return total / (to - from + 1);
     }
@@ -176,7 +210,7 @@ describe("생성된 맵 JSON 실제 검증 (전체 300개)", () => {
 
   test("맵 셀 값은 1~9 범위 (장애물 자리만 0 허용)", () => {
     for (let id = 1; id <= MAP_COUNT; id++) {
-      const m = parseMapJson(readMap(id));
+      const m = getMap(id);
       for (let r = 0; r < m.rows; r++) {
         for (let c = 0; c < m.cols; c++) {
           const v = m.initialBoard[r][c];
@@ -193,7 +227,7 @@ describe("생성된 맵 JSON 실제 검증 (전체 300개)", () => {
 
   test("id < 10: initialLives 필드 없음 (멀티라이프 미도입 구간)", () => {
     for (let id = 1; id <= 9; id++) {
-      const m = parseMapJson(readMap(id));
+      const m = getMap(id);
       assertEqual(m.initialLives, undefined);
     }
   });
@@ -203,7 +237,7 @@ describe("생성된 맵 JSON 실제 검증 (전체 300개)", () => {
       return Math.min(5, 1 + Math.floor(id / 10));
     }
     for (let id = 10; id <= MAP_COUNT; id++) {
-      const m = parseMapJson(readMap(id));
+      const m = getMap(id);
       assertTrue(m.initialLives !== undefined, `map${id}: initialLives 누락`);
       const maxLife = maxLifeForId(id);
       let multi = 0;
@@ -229,14 +263,14 @@ describe("생성된 맵 JSON 실제 검증 (전체 300개)", () => {
 
   test("id < 101: initialObstacles 없음", () => {
     for (let id = 1; id < 101; id++) {
-      const m = parseMapJson(readMap(id));
+      const m = getMap(id);
       assertEqual(m.initialObstacles, undefined, `map${id}`);
     }
   });
 
   test("id 101~199: initialObstacles 존재 + 비율 ≤ 2%", () => {
     for (let id = 101; id <= 199; id++) {
-      const m = parseMapJson(readMap(id));
+      const m = getMap(id);
       assertTrue(m.initialObstacles !== undefined, `map${id}: initialObstacles 누락`);
       let count = 0;
       for (const row of m.initialObstacles!) {
@@ -253,7 +287,7 @@ describe("생성된 맵 JSON 실제 검증 (전체 300개)", () => {
 
   test("id ≥ 200: initialObstacles 존재 + 비율 ≤ 5%", () => {
     for (let id = 200; id <= MAP_COUNT; id++) {
-      const m = parseMapJson(readMap(id));
+      const m = getMap(id);
       assertTrue(m.initialObstacles !== undefined, `map${id}: initialObstacles 누락`);
       let count = 0;
       for (const row of m.initialObstacles!) {

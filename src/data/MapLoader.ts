@@ -121,22 +121,66 @@ export function parseMapJson(text: string): MapData {
   return v;
 }
 
-export function mapJsonUrl(mapId: number, base = "data"): string {
-  return `${base}/map${String(mapId).padStart(3, "0")}.json`;
+/** 묶음 JSON(맵 배열) 파싱 — 각 항목을 validateMap 으로 검증하고 id 오름차순으로 정렬해 반환. */
+export function parseMapsJson(text: string): MapData[] {
+  const v: unknown = JSON.parse(text);
+  if (!Array.isArray(v)) {
+    throw new Error("MapLoader: maps.json 은 배열이어야 함.");
+  }
+  const out: MapData[] = [];
+  for (const item of v) {
+    if (!validateMap(item)) {
+      throw new Error("MapLoader: maps.json 항목 스키마 위반.");
+    }
+    out.push(item);
+  }
+  out.sort((a, b) => a.id - b.id);
+  return out;
+}
+
+export function mapsJsonUrl(base = "data"): string {
+  return `${base}/maps.json`;
 }
 
 export type Fetcher = (url: string) => Promise<Response>;
+
+/**
+ * 묶음 JSON 캐시 — 첫 호출에서 fetch 후 파싱한 배열을 보관.
+ * 동일 fetcher 로 재진입해도 한 번만 네트워크/파싱이 일어난다.
+ * 테스트에서 캐시를 무효화하려면 `clearMapsCache()` 호출.
+ */
+let mapsCache: Promise<MapData[]> | null = null;
+
+export function clearMapsCache(): void {
+  mapsCache = null;
+}
+
+async function fetchMaps(fetcher: Fetcher): Promise<MapData[]> {
+  const url = mapsJsonUrl();
+  const res = await fetcher(url);
+  if (!res.ok) {
+    throw new Error(`MapLoader: ${url} 로드 실패 (${res.status}).`);
+  }
+  const text = await res.text();
+  return parseMapsJson(text);
+}
 
 export async function loadMap(mapId: number, fetcher?: Fetcher): Promise<MapData> {
   const f = fetcher ?? ((typeof fetch !== "undefined" ? fetch : null) as Fetcher | null);
   if (!f) {
     throw new Error("MapLoader: fetch를 사용할 수 없는 환경.");
   }
-  const url = mapJsonUrl(mapId);
-  const res = await f(url);
-  if (!res.ok) {
-    throw new Error(`MapLoader: ${url} 로드 실패 (${res.status}).`);
+  if (mapsCache === null) {
+    mapsCache = fetchMaps(f).catch((e) => {
+      // 실패 시 다음 호출에서 재시도할 수 있도록 캐시를 비운다.
+      mapsCache = null;
+      throw e;
+    });
   }
-  const text = await res.text();
-  return parseMapJson(text);
+  const maps = await mapsCache;
+  const found = maps.find((m) => m.id === mapId);
+  if (!found) {
+    throw new Error(`MapLoader: id=${mapId} 맵이 묶음에 없음.`);
+  }
+  return found;
 }
