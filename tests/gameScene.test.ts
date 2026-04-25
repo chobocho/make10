@@ -1224,6 +1224,85 @@ describe("GameScene + 매치 이펙트", () => {
   });
 });
 
+describe("GameScene + 힌트 보충 규칙", () => {
+  function getHint(scene: GameScene): { getRemaining(): number } {
+    return (scene as unknown as { hint: { getRemaining(): number } }).hint;
+  }
+
+  test("level%8===0 (예: id=8): hintCount<3 이어도 진입 시 3 보장", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    const scene = new GameScene(context, () => 0, 0);
+    await scene.enter({
+      map: { ...tinyMap(), id: 8, hintCount: 1 }, // 기본 1 → 8의 배수라 3으로 채워짐
+    });
+    await Promise.resolve();
+    assertEqual(getHint(scene).getRemaining(), 3);
+  });
+
+  test("level%8===0 + carryover 1: 합계는 max(3, 1+1)=3", async () => {
+    const r = makeFakeRenderer();
+    const { context, saveManager } = makeCtx(r);
+    await saveManager.addHintCarryover();
+    const scene = new GameScene(context, () => 0, 0);
+    await scene.enter({
+      map: { ...tinyMap(), id: 16, hintCount: 1 },
+    });
+    await Promise.resolve();
+    assertEqual(getHint(scene).getRemaining(), 3);
+  });
+
+  test("일반 레벨 (id=5): carryover 2면 hintCount + 2", async () => {
+    const r = makeFakeRenderer();
+    const { context, saveManager } = makeCtx(r);
+    await saveManager.addHintCarryover();
+    await saveManager.addHintCarryover();
+    const scene = new GameScene(context, () => 0, 0);
+    await scene.enter({
+      map: { ...tinyMap(), id: 5, hintCount: 1 },
+    });
+    await Promise.resolve();
+    assertEqual(getHint(scene).getRemaining(), 3); // 1 + 2
+    // carryover 는 소비됨
+    assertEqual(await saveManager.peekHintCarryover(), 0);
+  });
+
+  test("진입 후 carryover 0 — 같은 진입 안 두 번 소비되지 않음", async () => {
+    const r = makeFakeRenderer();
+    const { context, saveManager } = makeCtx(r);
+    await saveManager.addHintCarryover();
+    const scene = new GameScene(context, () => 0, 0);
+    await scene.enter({ map: { ...tinyMap(), id: 5, hintCount: 1 } });
+    await Promise.resolve();
+    assertEqual(getHint(scene).getRemaining(), 2); // 1 + 1
+    assertEqual(await saveManager.peekHintCarryover(), 0);
+  });
+
+  test("세션 복원 시 carryover 적용 안 함 — 저장된 hintsLeft 그대로", async () => {
+    const r = makeFakeRenderer();
+    const { context, saveManager } = makeCtx(r);
+    await saveManager.addHintCarryover(); // 1
+    const scene = new GameScene(context, () => 0, 0);
+    await scene.enter({
+      map: { ...tinyMap(), id: 8, hintCount: 1 },
+      resumeFrom: {
+        mapId: 8,
+        boardState: [[4, 6]],
+        score: 0,
+        stars: 0,
+        timeLeft: 5,
+        hintsLeft: 0, // 복원: 0개 잔량
+        timestamp: 0,
+      },
+    });
+    await Promise.resolve();
+    // 복원 경로 → 8배수 보충도, carryover 도 적용 안 됨.
+    assertEqual(getHint(scene).getRemaining(), 0);
+    // 단, 미사용 carryover 는 보존
+    assertEqual(await saveManager.peekHintCarryover(), 1);
+  });
+});
+
 describe("GameScene + 보너스(×2) 블럭", () => {
   function plainPairMap(): MapData {
     return {

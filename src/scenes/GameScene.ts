@@ -158,7 +158,16 @@ export class GameScene implements Scene {
     const a = args as GameSceneArgs | undefined;
     if (!a?.map) throw new Error("GameScene.enter: map 인자 필요.");
     this.map = a.map;
-    this.setupGame(a.resumeFrom);
+    // 신규 진입에서만 ★3 carryover 소비 (세션 복원은 저장된 hintsLeft 우선).
+    let extraHints = 0;
+    if (!a.resumeFrom) {
+      try {
+        extraHints = await this.context.saveManager.consumeHintCarryover();
+      } catch {
+        extraHints = 0;
+      }
+    }
+    this.setupGame(a.resumeFrom, extraHints);
     this.recomputeLayout();
     this.context.renderer.onResize(() => this.recomputeLayout());
     this.attachVisibilityListener();
@@ -177,8 +186,10 @@ export class GameScene implements Scene {
   /**
    * 현재 `this.map`을 기반으로 게임 상태를 초기화/재초기화한다.
    * `resumeFrom`이 주어지면 해당 스냅샷(보드/점수/남은 시간/남은 힌트)으로 복원한다.
+   * `extraHints` 는 ★3 클리어로 누적된 carryover 보너스(첫 진입 시에만 적용).
+   * mapId 가 8의 배수면 힌트가 최소 3 이상이 되도록 보충 ("8마다 힌트 채우기").
    */
-  private setupGame(resumeFrom?: ProgressRecord): void {
+  private setupGame(resumeFrom?: ProgressRecord, extraHints = 0): void {
     if (!this.map) return;
     const initialBoard = resumeFrom?.boardState ?? this.map.initialBoard;
     const initialLives = resumeFrom?.boardLives ?? this.map.initialLives;
@@ -199,7 +210,15 @@ export class GameScene implements Scene {
       const elapsedMs = Math.max(0, this.timer.getLimitMs() - remainingMs);
       this.timer.setElapsedMs(elapsedMs);
     }
-    const hintCount = resumeFrom?.hintsLeft ?? this.map.hintCount;
+    let hintCount: number;
+    if (resumeFrom) {
+      // 세션 복원: 저장된 잔량 그대로 — carryover/8배수 보충 재적용 안 함.
+      hintCount = resumeFrom.hintsLeft ?? this.map.hintCount;
+    } else {
+      // 신규 진입: 맵 기본 + ★3 carryover. 그리고 mapId%8===0이면 최소 3 보장.
+      hintCount = this.map.hintCount + Math.max(0, extraHints);
+      if (this.map.id % 8 === 0) hintCount = Math.max(hintCount, 3);
+    }
     this.hint = new Hint(this.board, hintCount);
     this.score = resumeFrom?.score ?? 0;
     // 연쇄 상태는 세션 복원에도 항상 리셋 — 시간 격차로 인해 의미 없음.

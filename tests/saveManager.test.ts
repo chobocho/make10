@@ -217,6 +217,38 @@ describe("SaveManager (메모리 스토어 사용)", () => {
     assertFalse(await sm.resetTutorial());
   });
 
+  test("hint carryover: 초기 0, addHintCarryover 호출마다 +1", async () => {
+    const sm = new SaveManager(
+      new MemoryProgressStore(),
+      new MemoryProgressStore(),
+      new MemoryMetaStore(),
+    );
+    assertEqual(await sm.peekHintCarryover(), 0);
+    assertEqual(await sm.addHintCarryover(), 1);
+    assertEqual(await sm.addHintCarryover(), 2);
+    assertEqual(await sm.peekHintCarryover(), 2);
+  });
+
+  test("hint carryover: consume 하면 현재값 반환 + 0으로 리셋", async () => {
+    const sm = new SaveManager(
+      new MemoryProgressStore(),
+      new MemoryProgressStore(),
+      new MemoryMetaStore(),
+    );
+    await sm.addHintCarryover();
+    await sm.addHintCarryover();
+    assertEqual(await sm.consumeHintCarryover(), 2);
+    assertEqual(await sm.peekHintCarryover(), 0);
+    assertEqual(await sm.consumeHintCarryover(), 0); // 이미 0이면 0
+  });
+
+  test("hint carryover: metaStore 미주입 시 0 폴백 (게임 계속)", async () => {
+    const sm = new SaveManager(new MemoryProgressStore());
+    assertEqual(await sm.addHintCarryover(), 0);
+    assertEqual(await sm.consumeHintCarryover(), 0);
+    assertEqual(await sm.peekHintCarryover(), 0);
+  });
+
   test("스토어 내부 오류는 false/null로 삼킴 (게임 계속)", async () => {
     class ThrowingStore implements ProgressStore {
       async put(): Promise<void> {

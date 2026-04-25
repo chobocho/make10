@@ -57,6 +57,10 @@ export class ResultScene implements Scene {
         timeLeft: this.result.timeLeft,
         timestamp: Date.now(),
       });
+      // ★3 달성 시 다음 판 힌트 +1 (영속 carryover). 다음 GameScene 진입에서 소비.
+      if (this.result.stars >= 3) {
+        void this.context.saveManager.addHintCarryover();
+      }
     }
   }
 

@@ -10,7 +10,7 @@ import { ResultScene } from "../src/scenes/ResultScene";
 import type { SceneContext, SceneId } from "../src/scenes/Scene";
 import { CanvasRenderer } from "../src/renderer/CanvasRenderer";
 import { AudioManager, SoundName } from "../src/audio/AudioManager";
-import { SaveManager, MemoryProgressStore } from "../src/storage/SaveManager";
+import { SaveManager, MemoryProgressStore, MemoryMetaStore } from "../src/storage/SaveManager";
 import type { MapData } from "../src/data/MapLoader";
 import {
   computeMapGridLayout,
@@ -83,7 +83,7 @@ function makeCtx(maxMapId = 10): {
   const ctx: SceneContext = {
     renderer: r,
     audio,
-    saveManager: new SaveManager(new MemoryProgressStore()),
+    saveManager: new SaveManager(new MemoryProgressStore(), null, new MemoryMetaStore()),
     transition: (next, args) => transitions.push({ next, args }),
     loadMap: async (id) => {
       loadCalls.push(id);
@@ -304,6 +304,36 @@ describe("ResultScene", () => {
     await Promise.resolve();
     const rec = await ctx.saveManager.load(4);
     assertEqual(rec?.score, 9999); // 낮은 점수로 덮어쓰지 않아야 함
+  });
+
+  test("★3 클리어 시 hint carryover +1 (다음 판 보너스)", async () => {
+    const { ctx } = makeCtx();
+    const scene = new ResultScene(ctx);
+    scene.enter(gameResult(2, true));
+    // gameResult 의 stars=1; ★3 으로 만들기 위해 명시 케이스 설정.
+    scene.enter({
+      mapId: 5,
+      mapName: "m5",
+      cleared: true,
+      score: 9999,
+      stars: 3,
+      timeLeft: 30,
+      reason: "cleared",
+      starThresholds: [100, 1000, 2000],
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    assertEqual(await ctx.saveManager.peekHintCarryover(), 1);
+  });
+
+  test("★1 클리어는 carryover 변화 없음", async () => {
+    const { ctx } = makeCtx();
+    const scene = new ResultScene(ctx);
+    scene.enter(gameResult(3, true)); // stars=1
+    await Promise.resolve();
+    await Promise.resolve();
+    assertEqual(await ctx.saveManager.peekHintCarryover(), 0);
   });
 
   test("cleared=false 시 저장하지 않음", async () => {

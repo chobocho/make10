@@ -245,6 +245,7 @@ export class IndexedDbMetaStore implements MetaStore {
 }
 
 const META_KEY_TUTORIAL_DONE = "tutorial_done";
+const META_KEY_HINT_CARRYOVER = "hint_carryover";
 
 export class SaveManager {
   private readonly store: ProgressStore | null;
@@ -392,6 +393,46 @@ export class SaveManager {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * 힌트 carryover — ★3 클리어로 누적되는 다음 판 보너스.
+   * `add` 는 +1, `consume` 은 현재 값을 반환하면서 0으로 리셋한다.
+   * IndexedDB 미가용 등 오류 시 안전하게 0 으로 폴백.
+   */
+  async addHintCarryover(): Promise<number> {
+    if (!this.metaStore) return 0;
+    try {
+      const cur = await this.metaStore.get(META_KEY_HINT_CARRYOVER);
+      const n = (typeof cur === "number" ? Math.max(0, Math.floor(cur)) : 0) + 1;
+      await this.metaStore.set(META_KEY_HINT_CARRYOVER, n);
+      return n;
+    } catch {
+      return 0;
+    }
+  }
+
+  async consumeHintCarryover(): Promise<number> {
+    if (!this.metaStore) return 0;
+    try {
+      const cur = await this.metaStore.get(META_KEY_HINT_CARRYOVER);
+      const n = typeof cur === "number" ? Math.max(0, Math.floor(cur)) : 0;
+      if (n > 0) await this.metaStore.set(META_KEY_HINT_CARRYOVER, 0);
+      return n;
+    } catch {
+      return 0;
+    }
+  }
+
+  /** 현재 carryover 값 조회만 (소비 없음). UI 표시 등 비파괴 읽기용. */
+  async peekHintCarryover(): Promise<number> {
+    if (!this.metaStore) return 0;
+    try {
+      const cur = await this.metaStore.get(META_KEY_HINT_CARRYOVER);
+      return typeof cur === "number" ? Math.max(0, Math.floor(cur)) : 0;
+    } catch {
+      return 0;
     }
   }
 }

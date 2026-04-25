@@ -276,6 +276,34 @@
   - 3→1→6 다른 ㄱ자 경로도 정답 인식
   - phase 5 finale 텍스트 탭 → 종료 + 완료 마킹
 
+## 2026-04-25 — 이슈 #35 힌트 보충 규칙
+
+이전엔 힌트가 맵 시작 시 한 번만 부여됐던 정적 자원 → 두 가지 보충 트리거 도입.
+
+- **레벨%8===0**: 진입 시 hintCount 가 3 미만이면 3 으로 보충 (`max(current, 3)`).
+- **★3 클리어**: 다음 판 진입 시 +1 (영속 carryover).
+
+### SaveManager
+- 메타 키 `hint_carryover` (정수). 세션 간 영속(IndexedDB).
+- `addHintCarryover()`: +1 후 새 값 반환.
+- `consumeHintCarryover()`: 현재 값 반환 + 0 으로 리셋.
+- `peekHintCarryover()`: 비파괴 조회.
+- 스토어 미가용 시 모두 0 폴백.
+
+### GameScene
+- `setupGame(resumeFrom?, extraHints=0)`: 신규 진입 경로에서만 carryover/8배수 보충 적용.
+  - `resumeFrom`이 있으면 저장된 hintsLeft 그대로(중복 보충 방지).
+- `enter()`에서 신규 진입일 때 `consumeHintCarryover()` await → setupGame 에 extraHints 전달.
+
+### ResultScene
+- 클리어 + ★3 일 때 `addHintCarryover()` (fire-and-forget). ★1/★2/실패는 변동 없음.
+
+### 테스트 (10건 추가)
+- SaveManager 3건: 초기값/누적, consume 후 0, 미주입 폴백.
+- ResultScene 2건: ★3 → +1, ★1 → 변동 없음.
+- GameScene 5건: id=8 보충, 8+carryover 합계, 일반 레벨 carryover 적용/소비, 두 번 호출 안 함, 세션 복원 시 보충 안 함.
+- 검증: 373/373 pass (5회 안정), 번들 133.9 → 136.0KB.
+
 ## 2026-04-25 — 이슈 #34 보너스(×2) 블럭
 
 매치 시 점수 ×2 를 주는 시간 제한 보너스 블럭 도입.
