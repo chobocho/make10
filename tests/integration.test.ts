@@ -248,6 +248,66 @@ describe("Integration: Title → Game → Result", () => {
     assertEqual(fsm.getCurrentId(), "game");
   });
 
+  test("클리어 → ResultScene saveBest → TitleScene bestStars 갱신", async () => {
+    const winMap: MapData = {
+      id: 7,
+      name: "winnable",
+      cols: 2,
+      rows: 1,
+      timeLimit: 60,
+      hintCount: 0,
+      targetScore: 0,
+      starThresholds: [50, 150, 300], // ★1 컷=50 → 한 번 매치(100점)면 ★★
+      initialBoard: [[4, 6]],
+    };
+    const { ctx, fsm, saveManager } = buildContext(() => winMap);
+    fsm.register("title", new TitleScene(ctx));
+    fsm.register("game", new GameScene(ctx, () => 0, 0));
+    fsm.register("result", new ResultScene(ctx));
+
+    // 직접 게임으로 진입 — 한 번 매치 후 stuck(RNG=0 → 모두 1) 으로 종료
+    await fsm.start("game", { map: winMap });
+    const scene = fsm.getCurrent() as GameScene;
+    scene.render();
+    const layout = (scene as unknown as {
+      boardRenderer: { getLayout(): { originX: number; originY: number; cellSize: number } };
+    }).boardRenderer.getLayout();
+    const a = cellCenter(layout, 0, 0);
+    const b = cellCenter(layout, 1, 0);
+    scene.onPointerDown!(a.x, a.y);
+    scene.onPointerMove!(b.x, b.y);
+    scene.onPointerUp!(b.x, b.y);
+    await Promise.resolve();
+    await Promise.resolve();
+    assertEqual(fsm.getCurrentId(), "result");
+    // 점수 100 ≥ ★1=50 → cleared=true, stars=1
+    const res = (fsm.getCurrent() as unknown as { result: GameResult | null }).result;
+    assertTrue(res !== null);
+    assertTrue(res!.cleared);
+    assertEqual(res!.stars, 1);
+
+    // saveBest는 ResultScene.enter에서 fire-and-forget. 마이크로태스크 정착 대기.
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    const saved = await saveManager.load(7);
+    assertTrue(saved !== null, "saveBest 로 점수가 저장되어야 함");
+    assertEqual(saved!.stars, 1);
+    assertEqual(saved!.score, 100);
+
+    // 타이틀로 → bestStars 에 7번 맵의 ★1 반영
+    const size = ctx.renderer.getSize();
+    const btns = computeResultButtonsLayout(size.width, size.height);
+    fsm.onPointerDown(btns.title.x + 1, btns.title.y + 1);
+    fsm.onPointerUp(btns.title.x + 1, btns.title.y + 1);
+    await Promise.resolve();
+    await Promise.resolve();
+    assertEqual(fsm.getCurrentId(), "title");
+    const title = fsm.getCurrent() as TitleScene;
+    const bestStars = (title as unknown as { bestStars: Map<number, number> }).bestStars;
+    assertEqual(bestStars.get(7), 1, "타이틀 진입 시 직전 클리어 ★ 반영");
+  });
+
   test("리필 후에도 조합 없으면 reason=stuck (RNG 주입으로 모두 1 생성)", async () => {
     const stuckMap: MapData = {
       id: 1,
