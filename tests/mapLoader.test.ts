@@ -227,10 +227,27 @@ describe("생성된 맵 JSON 실제 검증 (전체 300개)", () => {
     }
   });
 
-  test("id < 200: initialObstacles 없음", () => {
-    for (let id = 1; id < 200; id++) {
+  test("id < 101: initialObstacles 없음", () => {
+    for (let id = 1; id < 101; id++) {
       const m = parseMapJson(readMap(id));
       assertEqual(m.initialObstacles, undefined, `map${id}`);
+    }
+  });
+
+  test("id 101~199: initialObstacles 존재 + 비율 ≤ 2%", () => {
+    for (let id = 101; id <= 199; id++) {
+      const m = parseMapJson(readMap(id));
+      assertTrue(m.initialObstacles !== undefined, `map${id}: initialObstacles 누락`);
+      let count = 0;
+      for (const row of m.initialObstacles!) {
+        for (const v of row) {
+          assertTrue(v === 0 || v === 1, `map${id}: 0/1 외 값 ${v}`);
+          if (v === 1) count++;
+        }
+      }
+      const ratio = count / (m.rows * m.cols);
+      assertTrue(ratio <= 0.02 + 1e-9, `map${id}: 장애물 비율 ${ratio.toFixed(3)} > 2%`);
+      assertTrue(count >= 1, `map${id}: 장애물 0개`);
     }
   });
 

@@ -27,10 +27,17 @@ interface MapSpec {
   initialObstacles?: number[][];
 }
 
-/** id ≥ 200 부터 장애물 도입. 비율은 cols*rows 의 [3%, 5%]. */
-const OBSTACLE_MIN_ID = 200;
-const OBSTACLE_MIN_RATIO = 0.03;
-const OBSTACLE_MAX_RATIO = 0.05;
+/**
+ * 장애물 도입 구간:
+ *   - id 101~199: 가벼운 도입 — 비율 [1%, 2%], 절대 cap 2%.
+ *   - id ≥ 200:   본격 — 비율 [3%, 5%], 절대 cap 5%.
+ *   - id < 101:   장애물 없음.
+ */
+const OBSTACLE_MIN_ID = 101;
+function obstacleRatiosFor(id: number): { min: number; max: number; cap: number } {
+  if (id < 200) return { min: 0.01, max: 0.02, cap: 0.02 };
+  return { min: 0.03, max: 0.05, cap: 0.05 };
+}
 
 /**
  * id에 따른 멀티라이프 최댓값.
@@ -154,18 +161,20 @@ function genBoardWithInitialCombo(
 }
 
 /**
- * id ≥ 200 인 맵의 장애물 배치를 생성. 비율은 [3%, 5%] 균등 임의값으로 결정.
- * 같은 행 양쪽 끝을 모두 장애물로 만드는 등 극단 분포는 피하기 위해 단순 셔플 표본 추출 사용.
+ * 해당 id의 장애물 배치를 생성한다. 단순 셔플 표본 추출로 같은 행 양 끝 동시 장애물 같은 극단 분포를 회피.
+ * 최소 1개는 보장 — id 101 부터 도입을 가시적으로 인지시키기 위함.
  */
 function genObstacles(
   cols: number,
   rows: number,
   rand: () => number,
+  id: number,
 ): number[][] {
   const total = cols * rows;
-  const ratio = OBSTACLE_MIN_RATIO + rand() * (OBSTACLE_MAX_RATIO - OBSTACLE_MIN_RATIO);
-  const cap = Math.floor(total * OBSTACLE_MAX_RATIO); // 절대 5% 초과 금지
-  const target = Math.min(cap, Math.max(1, Math.round(total * ratio)));
+  const { min, max, cap } = obstacleRatiosFor(id);
+  const ratio = min + rand() * (max - min);
+  const capCount = Math.floor(total * cap);
+  const target = Math.min(capCount, Math.max(1, Math.round(total * ratio)));
   const indices: number[] = [];
   for (let i = 0; i < total; i++) indices.push(i);
   for (let i = total - 1; i > 0; i--) {
@@ -260,7 +269,9 @@ export function generateMap(id: number): MapSpec {
   const rand = mulberry32(preset.id * 2654435761);
   // 장애물은 보드 생성 검증 단계에서 함께 고려해야 하므로 먼저 생성.
   const obstacles =
-    id >= OBSTACLE_MIN_ID ? genObstacles(preset.cols, preset.rows, rand) : undefined;
+    id >= OBSTACLE_MIN_ID
+      ? genObstacles(preset.cols, preset.rows, rand, id)
+      : undefined;
   const initialBoard = genBoardWithInitialCombo(
     preset.cols,
     preset.rows,
