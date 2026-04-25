@@ -148,3 +148,42 @@ describe("Hint", () => {
     assertEqual(h.getRemaining(), 1);
   });
 });
+
+describe("findValidCombination + 장애물", () => {
+  test("3 [장애물] 7 가로 — 인접 쌍 없음 → null", () => {
+    const b = new Board([[3, 0, 7]], undefined, [[0, 1, 0]]);
+    assertEqual(findValidCombination(b), null);
+  });
+
+  test("3 [장애물] 7 + 다른 행에 합10이 있으면 그 쌍을 반환", () => {
+    // 0행: 3 [장] 7  → 가로 무효
+    // 1행: 4 5 6     → 4+6 비인접, 5+5 없음, 4+5+1=? 없음. 다른 조합 필요.
+    // 1+9 세로: (0,0)=3,(0,1)=4 → 7, X. 그냥 (1,1)=5 와 인접한 5는 없음.
+    // 더 명확하게: 1행에 4,6를 인접 배치. (0,1)=4, (1,1)=6 → 4+6=10 ✓
+    const b = new Board(
+      [
+        [3, 0, 7],
+        [4, 6, 1],
+      ],
+      undefined,
+      [
+        [0, 1, 0],
+        [0, 0, 0],
+      ],
+    );
+    const r = findValidCombination(b);
+    assertTrue(r !== null);
+    const sum = r!.reduce((s, [c, row]) => s + b.getCell(c, row), 0);
+    assertEqual(sum, 10);
+    // 장애물 좌표가 결과에 포함되지 않는지 확인.
+    for (const [c, row] of r!) {
+      assertFalse(b.isObstacle(c, row));
+    }
+  });
+
+  test("3셀 경로가 장애물을 가로지르려 시도해도 반환되지 않음", () => {
+    // 1+2+7=10 직선이지만 가운데가 장애물. 다른 합10 조합 없으면 null.
+    const b = new Board([[1, 0, 7]], undefined, [[0, 1, 0]]);
+    assertEqual(findValidCombination(b), null);
+  });
+});

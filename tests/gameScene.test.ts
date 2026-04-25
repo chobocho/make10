@@ -1081,3 +1081,76 @@ describe("GameScene", () => {
     assertFalse(scene._isEnded());
   });
 });
+
+describe("GameScene + 장애물", () => {
+  function obstacleMap(): MapData {
+    // 1열 3행: (0,0)=4, (0,1)=장애물, (0,2)=6  (수직 인접 아님 — 매치 불가)
+    // 2열을 추가해 매치 경로 만들기:
+    //   row0: 4 6        (가로 인접 → 4+6=10 매치 가능)
+    //   row1: [장] 3
+    //   row2: 7 9
+    return {
+      id: 200,
+      name: "obs",
+      cols: 2,
+      rows: 3,
+      timeLimit: 60,
+      hintCount: 0,
+      targetScore: 0,
+      starThresholds: [50, 150, 300],
+      initialBoard: [
+        [4, 6],
+        [0, 3],
+        [7, 9],
+      ],
+      initialObstacles: [
+        [0, 0],
+        [1, 0],
+        [0, 0],
+      ],
+    };
+  }
+
+  test("장애물 맵 진입: Board가 장애물 정보를 보존", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    const scene = new GameScene(context, () => 0, 0);
+    await scene.enter({ map: obstacleMap() });
+    const board = (scene as unknown as { board: import("../src/game/Board").Board }).board;
+    assertTrue(board.isObstacle(0, 1));
+    assertFalse(board.isObstacle(1, 1));
+  });
+
+  test("장애물 맵 매치: 장애물 아래 블럭 제거 → 위 블럭이 통과해 채워짐", async () => {
+    const r = makeFakeRenderer();
+    const { context } = makeCtx(r);
+    // refill RNG=0 → 새 셀 항상 1
+    const scene = new GameScene(context, () => 0, 0);
+    await scene.enter({ map: obstacleMap() });
+    scene.render();
+    const layout = (scene as unknown as {
+      boardRenderer: { getLayout(): { originX: number; originY: number; cellSize: number } };
+    }).boardRenderer.getLayout();
+    // (0,0)=4, (1,0)=6 가로 매치
+    const cx0 = layout.originX + layout.cellSize / 2;
+    const cx1 = layout.originX + layout.cellSize + layout.cellSize / 2;
+    const cy0 = layout.originY + layout.cellSize / 2;
+    scene.onPointerDown!(cx0, cy0);
+    scene.onPointerMove!(cx1, cy0);
+    scene.onPointerUp!(cx1, cy0);
+    // 매치 제거 + 중력 적용 후 0열 결과:
+    //   row0: refill(=1)
+    //   row1: 장애물 (보존)
+    //   row2: 7 (그대로 — 위 블럭 4 사라짐)
+    const board = (scene as unknown as { board: import("../src/game/Board").Board }).board;
+    assertEqual(board.getCell(0, 0), 1); // 새로 리필
+    assertTrue(board.isObstacle(0, 1));
+    assertEqual(board.getCell(0, 2), 7);
+    // 1열 결과:
+    //   매치로 (1,0)=6 제거 → 슬롯 (0,1,2) 모두 비장애물.
+    //   블럭 = [3, 9]. emptyCount=1 → row 0 비움(리필=1), row 1 = 3, row 2 = 9.
+    assertEqual(board.getCell(1, 0), 1);
+    assertEqual(board.getCell(1, 1), 3);
+    assertEqual(board.getCell(1, 2), 9);
+  });
+});

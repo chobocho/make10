@@ -475,6 +475,82 @@ describe("TitleScene: 페이지 기반 네비게이션", () => {
     assertEqual(scene._getPage(), 2);
   });
 
+  test("page 1 prev 화살표 비활성 — 탭해도 페이지 변경 없음", async () => {
+    const { ctx } = makeCtx(300);
+    const scene = new TitleScene(ctx);
+    scene.enter();
+    await Promise.resolve();
+    await Promise.resolve();
+    scene.render();
+    const layout = computeMapGridLayout(480, 800, 100);
+    const prev = layout.prevArrow;
+    scene.onPointerDown!(prev.x + prev.width / 2, prev.y + prev.height / 2);
+    scene.onPointerUp!(prev.x + prev.width / 2, prev.y + prev.height / 2);
+    assertEqual(scene._getPage(), 1);
+  });
+
+  test("page 2 → prev 화살표로 page 1 복귀", async () => {
+    const { ctx } = makeCtx(300);
+    await ctx.saveManager.save({
+      mapId: 100,
+      boardState: [],
+      score: 1500,
+      stars: 1,
+      timeLeft: 0,
+      timestamp: 0,
+    });
+    const scene = new TitleScene(ctx);
+    scene.enter();
+    await Promise.resolve();
+    await Promise.resolve();
+    scene._setPage(2);
+    scene.render();
+    const layout = computeMapGridLayout(480, 800, 100);
+    const prev = layout.prevArrow;
+    scene.onPointerDown!(prev.x + prev.width / 2, prev.y + prev.height / 2);
+    scene.onPointerUp!(prev.x + prev.width / 2, prev.y + prev.height / 2);
+    assertEqual(scene._getPage(), 1);
+  });
+
+  test("페이지 이동 시 scrollY는 0으로 리셋", async () => {
+    const { ctx } = makeCtx(300);
+    await ctx.saveManager.save({
+      mapId: 100,
+      boardState: [],
+      score: 1500,
+      stars: 1,
+      timeLeft: 0,
+      timestamp: 0,
+    });
+    const scene = new TitleScene(ctx);
+    scene.enter();
+    await Promise.resolve();
+    await Promise.resolve();
+    scene._scrollBy(400);
+    assertTrue(scene._getScrollY() > 0);
+    scene.render();
+    const layout = computeMapGridLayout(480, 800, 100);
+    const next = layout.nextArrow;
+    scene.onPointerDown!(next.x + next.width / 2, next.y + next.height / 2);
+    scene.onPointerUp!(next.x + next.width / 2, next.y + next.height / 2);
+    assertEqual(scene._getPage(), 2);
+    assertEqual(scene._getScrollY(), 0);
+  });
+
+  test("ctx.maxMapId가 100일 때 next 화살표 비활성 (총 1페이지)", async () => {
+    const { ctx } = makeCtx(100);
+    const scene = new TitleScene(ctx);
+    scene.enter();
+    await Promise.resolve();
+    await Promise.resolve();
+    scene.render();
+    const layout = computeMapGridLayout(480, 800, 100);
+    const next = layout.nextArrow;
+    scene.onPointerDown!(next.x + next.width / 2, next.y + next.height / 2);
+    scene.onPointerUp!(next.x + next.width / 2, next.y + next.height / 2);
+    assertEqual(scene._getPage(), 1);
+  });
+
   test("페이지 2에서 첫 카드 탭 → mapId 101 로드 (단, 100을 ★1+로 깸)", async () => {
     const { ctx, loadCalls } = makeCtx(300);
     // 페이지 2에 진입하려면 100 클리어, 페이지 2의 첫 맵 101도 100 클리어로 자동 해제.

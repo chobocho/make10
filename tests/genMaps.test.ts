@@ -83,4 +83,60 @@ describe("gen-maps", () => {
       for (const row of m.initialLives) assertEqual(row.length, m.cols);
     }
   });
+
+  test("id < 101: initialObstacles 미생성", () => {
+    for (const id of [1, 50, 100]) {
+      const m = generateMap(id);
+      assertEqual(m.initialObstacles, undefined, `id=${id}`);
+    }
+  });
+
+  test("id 101~199: initialObstacles 존재 + 비율 ≤ 2%, ≥ 1개", () => {
+    for (const id of [101, 120, 150, 199]) {
+      const m = generateMap(id);
+      assertTrue(m.initialObstacles !== undefined, `id=${id}`);
+      let count = 0;
+      for (const row of m.initialObstacles!) for (const v of row) if (v === 1) count++;
+      const ratio = count / (m.rows * m.cols);
+      assertTrue(ratio <= 0.02 + 1e-9, `id=${id} ratio=${ratio}`);
+      assertTrue(count >= 1, `id=${id} count=${count}`);
+    }
+  });
+
+  test("id ≥ 200: initialObstacles 존재 + 비율 ≤ 5%, ≥ 1개", () => {
+    for (const id of [200, 250, 300]) {
+      const m = generateMap(id);
+      assertTrue(m.initialObstacles !== undefined, `id=${id}`);
+      let count = 0;
+      for (const row of m.initialObstacles!) for (const v of row) if (v === 1) count++;
+      const ratio = count / (m.rows * m.cols);
+      assertTrue(ratio <= 0.05 + 1e-9, `id=${id} ratio=${ratio}`);
+      assertTrue(count >= 1, `id=${id} count=${count}`);
+    }
+  });
+
+  test("장애물 자리는 initialBoard=0, initialLives=0", () => {
+    for (const id of [101, 200, 300]) {
+      const m = generateMap(id);
+      if (!m.initialObstacles) continue;
+      for (let r = 0; r < m.rows; r++) {
+        for (let c = 0; c < m.cols; c++) {
+          if (m.initialObstacles[r][c] === 1) {
+            assertEqual(m.initialBoard[r][c], 0, `id=${id} (${c},${r})`);
+            if (m.initialLives) {
+              assertEqual(m.initialLives[r][c], 0, `id=${id} (${c},${r})`);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  test("결정성: 장애물 포함 맵도 동일 id 호출이면 obstacles 동일", () => {
+    for (const id of [105, 220]) {
+      const a = generateMap(id);
+      const b = generateMap(id);
+      assertDeepEqual(a.initialObstacles, b.initialObstacles);
+    }
+  });
 });

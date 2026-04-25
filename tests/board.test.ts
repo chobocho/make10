@@ -620,6 +620,88 @@ describe("Board", () => {
     assertEqual(b.getCell(1, 0), 1);
   });
 
+  test("applyGravity: 멀티라이프 셀이 장애물 통과 시 lives 보존", () => {
+    // 0=3(life=3), 1=빈, 2=장애물, 3=빈, 4=빈
+    const b = new Board(
+      [[3], [0], [0], [0], [0]],
+      [[3], [0], [0], [0], [0]],
+      [[0], [0], [1], [0], [0]],
+    );
+    b.applyGravity();
+    // 슬롯 = (0,1,3,4). 블럭 = [3]. emptyCount=3. 마지막 슬롯(row 4)에 배치.
+    assertEqual(b.getCell(0, 4), 3);
+    assertEqual(b.getLives(0, 4), 3); // lives 보존
+    assertEqual(b.getCell(0, 0), 0);
+    assertEqual(b.getCell(0, 1), 0);
+    assertTrue(b.isObstacle(0, 2));
+    assertEqual(b.getCell(0, 3), 0);
+  });
+
+  test("applyGravity: 한 열에 장애물 2개 — 위 블럭이 두 장애물 모두 통과해 바닥에 쌓임", () => {
+    // row: 0=5, 1=장애물, 2=빈, 3=장애물, 4=8 (이 8이 매치로 사라졌다고 가정 → 실제로는 5만 있음)
+    const b = new Board(
+      [[5], [0], [0], [0], [0]],
+      undefined,
+      [[0], [1], [0], [1], [0]],
+    );
+    b.applyGravity();
+    // 슬롯 = (0,2,4). 블럭=[5]. emptyCount=2. 마지막 슬롯(row 4)에 5 배치.
+    assertEqual(b.getCell(0, 0), 0);
+    assertTrue(b.isObstacle(0, 1));
+    assertEqual(b.getCell(0, 2), 0);
+    assertTrue(b.isObstacle(0, 3));
+    assertEqual(b.getCell(0, 4), 5);
+  });
+
+  test("applyGravity: 전체 장애물인 열은 변화 없음", () => {
+    const b = new Board(
+      [[1, 0], [2, 0], [3, 0]],
+      undefined,
+      [[0, 1], [0, 1], [0, 1]],
+    );
+    b.applyGravity();
+    // 1열은 모두 장애물 — 슬롯 0개 → 처리 없음.
+    assertTrue(b.isObstacle(1, 0));
+    assertTrue(b.isObstacle(1, 1));
+    assertTrue(b.isObstacle(1, 2));
+    // 0열은 정상 (이미 가득 차 있음).
+    assertEqual(b.getCell(0, 0), 1);
+    assertEqual(b.getCell(0, 1), 2);
+    assertEqual(b.getCell(0, 2), 3);
+  });
+
+  test("applyMatch + applyGravity + refill: 장애물 아래 블럭 제거 → 위 블럭이 빈자리 차지", () => {
+    // (0,0)=4, (0,1)=장, (0,2)=6 (지금 매치로 (0,2)와 (1,2)=4 제거 가정)
+    // 결과: (0,0)→떨어져 (0,2) 자리 채움.
+    const b = new Board(
+      [
+        [4, 0],
+        [0, 0], // (0,1) 장애물
+        [6, 4],
+      ],
+      undefined,
+      [
+        [0, 0],
+        [1, 0],
+        [0, 0],
+      ],
+    );
+    // (0,2)와 (1,2)를 매치(6+4=10)로 제거.
+    b.applyMatch([
+      [0, 2],
+      [1, 2],
+    ]);
+    b.applyGravity();
+    // 0열: 슬롯=(0,2). 블럭=[4]. emptyCount=1 → row 0 비움, row 2에 4.
+    assertEqual(b.getCell(0, 0), 0);
+    assertTrue(b.isObstacle(0, 1));
+    assertEqual(b.getCell(0, 2), 4);
+    b.refill(() => 0); // 임의값=1
+    assertEqual(b.getCell(0, 0), 1); // 새로 채워짐
+    assertTrue(b.isObstacle(0, 1)); // 장애물 그대로
+    assertEqual(b.getCell(0, 2), 4); // 보존
+  });
+
   test("obstaclesSnapshot: 동일 차원의 boolean 사본 반환", () => {
     const b = new Board([[1, 0]], undefined, [[0, 1]]);
     const snap = b.obstaclesSnapshot();

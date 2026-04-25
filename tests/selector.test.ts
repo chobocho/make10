@@ -170,3 +170,51 @@ describe("Selector", () => {
     assertDeepEqual(posArray(s), [[2, 0]]);
   });
 });
+
+describe("Selector + 장애물", () => {
+  test("begin: 장애물 셀(grid=0)은 거부", () => {
+    const b = new Board([[3, 0, 7]], undefined, [[0, 1, 0]]);
+    const s = new Selector(b);
+    assertFalse(s.begin(1, 0));
+  });
+
+  test("extend: 장애물 셀로의 확장은 거부 (grid=0이라 isEmpty)", () => {
+    const b = new Board([[3, 0, 7]], undefined, [[0, 1, 0]]);
+    const s = new Selector(b);
+    assertTrue(s.begin(0, 0));
+    assertFalse(s.extend(1, 0)); // 장애물
+  });
+
+  test("extend: 장애물 너머의 셀로 직접 점프 불가 (인접 1 위반)", () => {
+    const b = new Board([[3, 0, 7]], undefined, [[0, 1, 0]]);
+    const s = new Selector(b);
+    assertTrue(s.begin(0, 0));
+    // (0,0)에서 (2,0)으로 바로 이동 — 거리 2라 거부
+    assertFalse(s.extend(2, 0));
+  });
+
+  test("commit: 장애물을 포함하지 않는 우회 경로는 정상 (수직 → 수평)", () => {
+    // 3 [장애물] 7
+    // 1   2     6
+    // (0,0)=3 → (0,1)=1 사이는 인접하지만 합 4. 다른 경로 시연:
+    // (2,0)=7 → (2,1)=6 → (1,1)=2: 합 15. 장애물 없는 셀로만 이동 OK.
+    const b = new Board(
+      [
+        [3, 0, 7],
+        [1, 2, 6],
+      ],
+      undefined,
+      [
+        [0, 1, 0],
+        [0, 0, 0],
+      ],
+    );
+    const s = new Selector(b);
+    assertTrue(s.begin(2, 0));
+    assertTrue(s.extend(2, 1));
+    assertTrue(s.extend(1, 1));
+    const r = s.commit();
+    assertEqual(r.positions.length, 3);
+    assertEqual(r.sum, 15);
+  });
+});
