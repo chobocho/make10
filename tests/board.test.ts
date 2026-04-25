@@ -396,6 +396,141 @@ describe("Board", () => {
     assertEqual(b.getLives(1, 2), 3);
   });
 
+  test("applyMatch: 빈 positions 배열 → 0 반환, 보드 불변", () => {
+    const b = new Board([[3, 7]], [[2, 3]]);
+    const before = JSON.stringify({ g: b.snapshot(), l: b.livesSnapshot() });
+    assertEqual(b.applyMatch([]), 0);
+    const after = JSON.stringify({ g: b.snapshot(), l: b.livesSnapshot() });
+    assertEqual(before, after);
+  });
+
+  test("applyMatch: 경계 밖 좌표 무시 (throw 안 함)", () => {
+    const b = new Board([[3, 7]], [[2, 2]]);
+    // 한쪽이 경계 밖이면 특수 규칙 미적용, 정상 셀만 1 데미지
+    const destroyed = b.applyMatch([
+      [0, 0],
+      [9, 9],
+    ]);
+    assertEqual(destroyed, 0);
+    assertEqual(b.getLives(0, 0), 1); // 2 → 1
+    // 또 다른 케이스: 양쪽 다 경계 밖
+    assertEqual(
+      b.applyMatch([
+        [-1, 0],
+        [9, 9],
+      ]),
+      0,
+    );
+  });
+
+  test("applyMatch: 빈 셀(lives=0) 좌표는 데미지 없음", () => {
+    const b = new Board([
+      [3, 0],
+      [4, 7],
+    ]);
+    // (1,0)은 빈 칸 — applyDamageAt에서 lives<=0 로 0 반환
+    const destroyed = b.applyMatch([
+      [0, 0],
+      [1, 0],
+    ]);
+    assertEqual(destroyed, 1);
+    assertTrue(b.isEmpty(0, 0));
+  });
+
+  test("applyMatch 라이프사이클: lives=4 셀이 4회 매치 후 제거", () => {
+    const b = new Board(
+      [[3, 7]],
+      [[4, 1]],
+    );
+    // 1번째: 좌(4)→3, 우(1)→0 제거
+    let d = b.applyMatch([
+      [0, 0],
+      [1, 0],
+    ]);
+    assertEqual(d, 1);
+    assertEqual(b.getLives(0, 0), 3);
+    // 우측 다시 채움 (테스트용 직접 setup)
+    (b as unknown as { grid: number[][]; lives: number[][] }).grid[0][1] = 7;
+    (b as unknown as { grid: number[][]; lives: number[][] }).lives[0][1] = 1;
+    // 2번째 매치
+    d = b.applyMatch([
+      [0, 0],
+      [1, 0],
+    ]);
+    assertEqual(b.getLives(0, 0), 2);
+    (b as unknown as { grid: number[][]; lives: number[][] }).grid[0][1] = 7;
+    (b as unknown as { grid: number[][]; lives: number[][] }).lives[0][1] = 1;
+    // 3번째 매치
+    d = b.applyMatch([
+      [0, 0],
+      [1, 0],
+    ]);
+    assertEqual(b.getLives(0, 0), 1);
+    (b as unknown as { grid: number[][]; lives: number[][] }).grid[0][1] = 7;
+    (b as unknown as { grid: number[][]; lives: number[][] }).lives[0][1] = 1;
+    // 4번째 매치 — 좌(1)→0 제거, 우(1)→0 제거
+    d = b.applyMatch([
+      [0, 0],
+      [1, 0],
+    ]);
+    assertEqual(d, 2);
+    assertTrue(b.isEmpty(0, 0));
+    assertTrue(b.isEmpty(1, 0));
+  });
+
+  test("applyMatch: 멀티가 lives=1로 떨어진 후 다음 매치에서 일반처럼 즉시 제거", () => {
+    const b = new Board([[3, 7]], [[2, 1]]);
+    // 1번째: 좌(2,멀티)+우(1,일반) → 한쪽만 멀티이므로 셀당 1 데미지
+    b.applyMatch([
+      [0, 0],
+      [1, 0],
+    ]);
+    assertEqual(b.getLives(0, 0), 1); // 멀티가 일반화
+    // 우측 다시 일반 셀로 셋업
+    (b as unknown as { grid: number[][]; lives: number[][] }).grid[0][1] = 7;
+    (b as unknown as { grid: number[][]; lives: number[][] }).lives[0][1] = 1;
+    // 2번째 매치 — 양쪽 일반이므로 즉시 제거
+    const d = b.applyMatch([
+      [0, 0],
+      [1, 0],
+    ]);
+    assertEqual(d, 2);
+    assertTrue(b.isEmpty(0, 0));
+  });
+
+  test("applyMatch + applyGravity + refill: 살아남은 멀티는 자리 유지, 제거된 셀만 낙하/리필", () => {
+    // 2x2: 위 [3@2lives, 7@1life], 아래 [4@1life, 6@1life]
+    const b = new Board(
+      [
+        [3, 7],
+        [4, 6],
+      ],
+      [
+        [2, 1],
+        [1, 1],
+      ],
+    );
+    // 위쪽 행 매치 → 좌(2,멀티)+우(1,일반) 분기 → 둘 다 1 데미지
+    // 좌측은 멀티 → lives=1, 우측은 일반 → 제거
+    b.applyMatch([
+      [0, 0],
+      [1, 0],
+    ]);
+    assertEqual(b.getLives(0, 0), 1);
+    assertTrue(b.isEmpty(1, 0));
+    // 중력: (1,0) 빈칸으로 (1,1)의 6이 위로 못 올라가지만 같은 열의 6이 위로 올라옴(중력은 아래로 떨어뜨림)
+    // 실제로 우측 열은 [0, 6] → [0, 6] (이미 아래로 모여있음)
+    b.applyGravity();
+    assertEqual(b.getCell(1, 1), 6);
+    assertTrue(b.isEmpty(1, 0));
+    assertEqual(b.getCell(0, 0), 3); // 좌측 멀티는 그대로 (lives=1)
+    assertEqual(b.getCell(0, 1), 4);
+    // 리필 — RNG=0 → 새 셀은 1, lives=1
+    b.refill(() => 0);
+    assertEqual(b.getCell(1, 0), 1);
+    assertEqual(b.getLives(1, 0), 1);
+  });
+
   test("refill: 새로 채워지는 셀은 항상 lives=1", () => {
     const b = new Board(
       [

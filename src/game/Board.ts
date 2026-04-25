@@ -142,11 +142,14 @@ export class Board {
     if (positions.length === 2) {
       const [c1, r1] = positions[0];
       const [c2, r2] = positions[1];
-      const l1 = this.lives[r1][c1];
-      const l2 = this.lives[r2][c2];
-      if (l1 >= 2 && l2 >= 2) {
-        const dmg = Math.min(l1, l2);
-        return this.applyDamageAt(c1, r1, dmg) + this.applyDamageAt(c2, r2, dmg);
+      // 경계 밖 좌표면 특수 규칙 분기 진입을 막고 기본 경로(applyDamageAt)에 위임 — 안전하게 무시됨.
+      if (this.inBounds(c1, r1) && this.inBounds(c2, r2)) {
+        const l1 = this.lives[r1][c1];
+        const l2 = this.lives[r2][c2];
+        if (l1 >= 2 && l2 >= 2) {
+          const dmg = Math.min(l1, l2);
+          return this.applyDamageAt(c1, r1, dmg) + this.applyDamageAt(c2, r2, dmg);
+        }
       }
     }
 

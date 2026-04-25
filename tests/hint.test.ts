@@ -118,4 +118,33 @@ describe("Hint", () => {
     h.clear();
     assertFalse(h.isHighlighting());
   });
+
+  test("findValidCombination: 멀티라이프 셀도 face value 기준 매치 조합 탐지", () => {
+    // 멀티라이프(lives≥2)여도 합=10 판정에는 영향 없음 — face value만 본다.
+    const b = new Board(
+      [[3, 7, 2]],
+      [[5, 1, 1]], // (0,0)는 lives=5 멀티
+    );
+    const r = findValidCombination(b);
+    assertDeepEqual(r?.map((p) => [p[0], p[1]]), [
+      [0, 0],
+      [1, 0],
+    ]);
+  });
+
+  test("findValidCombination: 양쪽 모두 멀티라이프인 합=10 쌍도 탐지", () => {
+    const b = new Board(
+      [[4, 6]],
+      [[3, 4]], // 둘 다 멀티
+    );
+    const r = findValidCombination(b);
+    assertTrue(r !== null);
+  });
+
+  test("Hint.request: 멀티라이프 보드에서도 정상 카운트 차감", () => {
+    const b = new Board([[3, 7]], [[2, 2]]);
+    const h = new Hint(b, 2);
+    assertTrue(h.request() !== null);
+    assertEqual(h.getRemaining(), 1);
+  });
 });

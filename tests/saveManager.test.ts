@@ -144,6 +144,33 @@ describe("SaveManager (메모리 스토어 사용)", () => {
     );
   });
 
+  test("세션: boardLives 왕복 정합성", async () => {
+    const sm = new SaveManager(new MemoryProgressStore(), new MemoryProgressStore());
+    const rec: ProgressRecord = {
+      mapId: 12,
+      boardState: [
+        [3, 7],
+        [4, 6],
+      ],
+      boardLives: [
+        [4, 1],
+        [1, 3],
+      ],
+      score: 200,
+      stars: 1,
+      timeLeft: 25,
+      hintsLeft: 2,
+      timestamp: 1_700_000_999_000,
+    };
+    await sm.saveSession(rec);
+    const loaded = await sm.loadSession(12);
+    assertTrue(loaded !== null);
+    assertDeepEqual(loaded!.boardLives, [
+      [4, 1],
+      [1, 3],
+    ]);
+  });
+
   test("세션: sessionStore 미주입 시 모두 폴백", async () => {
     const sm = new SaveManager(new MemoryProgressStore()); // session=null
     assertFalse(await sm.saveSession({ ...sample(1, 0), hintsLeft: 0 }));

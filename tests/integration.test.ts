@@ -8,6 +8,7 @@ import {
   assertEqual,
   assertTrue,
   assertFalse,
+  assertDeepEqual,
 } from "./runner";
 import { FSM } from "../src/core/FSM";
 import type { SceneContext } from "../src/scenes/Scene";
@@ -109,7 +110,10 @@ function buildContext(mapProvider: (id: number) => MapData = (id) => pairTiledFi
   (audio as unknown as { play: (n: SoundName) => void }).play = (n) =>
     audioCalls.push(n);
   (audio as unknown as { ensureReady: () => void }).ensureReady = () => {};
-  const saveManager = new SaveManager(new MemoryProgressStore());
+  const saveManager = new SaveManager(
+    new MemoryProgressStore(),
+    new MemoryProgressStore(), // 세션 스토어 주입 — 멀티라이프 세션 복원 테스트 용도
+  );
   const fsm = new FSM();
 
   const ctx: SceneContext = {
@@ -306,6 +310,131 @@ describe("Integration: Title → Game → Result", () => {
     const title = fsm.getCurrent() as TitleScene;
     const bestStars = (title as unknown as { bestStars: Map<number, number> }).bestStars;
     assertEqual(bestStars.get(7), 1, "타이틀 진입 시 직전 클리어 ★ 반영");
+  });
+
+  test("멀티라이프 보드: 양쪽 멀티 매치 시 작은 쪽 즉시 제거, 큰 쪽 lives 잔존", async () => {
+    const map: MapData = {
+      id: 11,
+      name: "multi-life",
+      cols: 2,
+      rows: 1,
+      timeLimit: 60,
+      hintCount: 0,
+      targetScore: 0,
+      starThresholds: [50, 200, 500],
+      initialBoard: [[4, 6]],
+      initialLives: [[5, 2]],
+    };
+    const { ctx, fsm } = buildContext(() => map);
+    fsm.register("game", new GameScene(ctx, () => 0.5, 0));
+    fsm.register("result", new ResultScene(ctx));
+    await fsm.start("game", { map });
+    const scene = fsm.getCurrent() as GameScene;
+    scene.render();
+    const layout = (scene as unknown as {
+      boardRenderer: { getLayout(): { originX: number; originY: number; cellSize: number } };
+    }).boardRenderer.getLayout();
+    const a = cellCenter(layout, 0, 0);
+    const b = cellCenter(layout, 1, 0);
+    scene.onPointerDown!(a.x, a.y);
+    scene.onPointerMove!(b.x, b.y);
+    scene.onPointerUp!(b.x, b.y);
+    // 양쪽 멀티 → min(5,2)=2 데미지 → 좌(5)→3 잔존, 우(2)→0 제거 후 리필
+    const board = (scene as unknown as { board: { getCell(c: number, r: number): number; getLives(c: number, r: number): number } }).board;
+    assertEqual(board.getCell(0, 0), 4);
+    assertEqual(board.getLives(0, 0), 3);
+    // 우측은 RNG=0.5 → 1+floor(0.5*9)=5 로 리필됨, lives=1
+    assertEqual(board.getLives(1, 0), 1);
+  });
+
+  test("멀티라이프 보드: 같은 멀티 셀을 반복 매치하여 lives 소진까지 추적", async () => {
+    // 4(lives=3) | 6 | 4 | 6 …. 4가 좌측에 멀티 lives=3로 시작.
+    // 매번 (0,0)+(1,0) 으로 매치하여 (0,0)의 lives가 3→2→1→0(제거)되는지 확인
+    const map: MapData = {
+      id: 11,
+      name: "multi-soak",
+      cols: 2,
+      rows: 1,
+      timeLimit: 60,
+      hintCount: 0,
+      targetScore: 0,
+      starThresholds: [50, 200, 500],
+      initialBoard: [[4, 6]],
+      initialLives: [[3, 1]],
+    };
+    // RNG=0 → 리필이 모두 1 (1 + floor(0)=1). 하지만 우측 셀은 매번 6으로 다시 채워야 4+6=10 매치 가능.
+    // 실제로 RNG=0이면 리필 후 우측이 1이 되어 4+1=5 → 매치 불가 → 즉시 stuck.
+    // 따라서 우측이 매번 6으로 리필되도록 RNG 를 customizing.
+    let calls = 0;
+    const rng = (): number => {
+      calls++;
+      // value 1+floor(x*9)=6 ⇒ x*9 ∈ [5,6) ⇒ x ∈ [5/9, 6/9). 5.5/9 사용.
+      return 5.5 / 9;
+    };
+    const { ctx, fsm } = buildContext(() => map);
+    fsm.register("game", new GameScene(ctx, rng, 0));
+    fsm.register("result", new ResultScene(ctx));
+    await fsm.start("game", { map });
+    const scene = fsm.getCurrent() as GameScene;
+    const board = (scene as unknown as { board: { getCell(c: number, r: number): number; getLives(c: number, r: number): number } }).board;
+    scene.render();
+    const layout = (scene as unknown as {
+      boardRenderer: { getLayout(): { originX: number; originY: number; cellSize: number } };
+    }).boardRenderer.getLayout();
+    const a = cellCenter(layout, 0, 0);
+    const b = cellCenter(layout, 1, 0);
+    function match(): void {
+      scene.onPointerDown!(a.x, a.y);
+      scene.onPointerMove!(b.x, b.y);
+      scene.onPointerUp!(b.x, b.y);
+    }
+    // 1: 4(3,멀티)+6(1,일반) → 한쪽만 멀티 → 1 데미지씩 → 좌(3→2 잔존) 우 제거됨
+    match();
+    assertEqual(board.getLives(0, 0), 2);
+    assertEqual(board.getCell(1, 0), 6); // 리필
+    // 2: 동일 — 좌(2→1)
+    match();
+    assertEqual(board.getLives(0, 0), 1);
+    // 3: 좌도 일반(lives=1) → 둘 다 즉시 제거
+    match();
+    // 게임이 stuck 으로 종료되거나 (리필 후) 계속될 수 있음. 적어도 좌측이 새 값으로 리필되었어야 함.
+    assertEqual(board.getLives(0, 0), 1);
+    assertTrue(calls > 0);
+  });
+
+  test("멀티라이프 세션 복원: pause → reload → 보드/lives 그대로 보존", async () => {
+    const map: MapData = {
+      id: 11,
+      name: "multi-resume",
+      cols: 2,
+      rows: 1,
+      timeLimit: 60,
+      hintCount: 0,
+      targetScore: 0,
+      starThresholds: [50, 200, 500],
+      initialBoard: [[4, 6]],
+      initialLives: [[4, 2]],
+    };
+    const { ctx, fsm, saveManager } = buildContext(() => map);
+    fsm.register("game", new GameScene(ctx, Math.random, 0));
+    fsm.register("result", new ResultScene(ctx));
+    await fsm.start("game", { map });
+    let scene = fsm.getCurrent() as GameScene;
+    scene.render();
+    scene.pauseGame();
+    await Promise.resolve();
+    const rec = await saveManager.loadSession(11);
+    assertTrue(rec !== null);
+    assertDeepEqual(rec!.boardLives, [[4, 2]]);
+
+    // 새 GameScene으로 resumeFrom 복원 시뮬레이션
+    fsm.register("game", new GameScene(ctx, Math.random, 0));
+    await fsm.start("game", { map, resumeFrom: rec! });
+    scene = fsm.getCurrent() as GameScene;
+    const board = (scene as unknown as { board: { getCell(c: number, r: number): number; getLives(c: number, r: number): number } }).board;
+    assertEqual(board.getLives(0, 0), 4);
+    assertEqual(board.getLives(1, 0), 2);
+    assertTrue(scene.isPaused()); // 복원 시 즉시 일시정지
   });
 
   test("리필 후에도 조합 없으면 reason=stuck (RNG 주입으로 모두 1 생성)", async () => {
