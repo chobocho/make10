@@ -1106,7 +1106,7 @@ describe("GameScene + 매치 이펙트", () => {
     assertTrue(effects.hasActive());
   });
 
-  test("점수: 2셀 +100 / 3셀 +400 (3셀이 동수의 2셀 매치보다 우월)", async () => {
+  test("점수: 2셀 +100 / 3셀 +300 (3셀이 동수의 2셀 매치보다 우월)", async () => {
     // 2셀 매치 한 번
     const r1 = makeFakeRenderer();
     const { context: ctx1 } = makeCtx(r1);
@@ -1145,7 +1145,7 @@ describe("GameScene + 매치 이펙트", () => {
     sceneT.onPointerMove!(lT.originX + lT.cellSize * 1.5, lT.originY + lT.cellSize / 2);
     sceneT.onPointerMove!(lT.originX + lT.cellSize * 2.5, lT.originY + lT.cellSize / 2);
     sceneT.onPointerUp!(lT.originX + lT.cellSize * 2.5, lT.originY + lT.cellSize / 2);
-    assertEqual(sceneT._getScore(), 400);
+    assertEqual(sceneT._getScore(), 300);
     // 명시적 우월성: 3셀 한 번 > 2셀 두 번
     assertTrue(sceneT._getScore() > 2 * sceneP._getScore());
   });

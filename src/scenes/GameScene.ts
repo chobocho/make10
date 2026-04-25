@@ -55,7 +55,7 @@ export interface GameResult {
 }
 
 const SCORE_PAIR = 100;
-const SCORE_TRIPLE = 400;
+const SCORE_TRIPLE = 300;
 const DEFAULT_INTRO_MS = 2500;
 /** 연쇄(chain) 인정 윈도우 — 직전 매치로부터 이 시간 안에 다음 매치를 성공시키면 연쇄. */
 const CHAIN_WINDOW_MS = 1000;
